@@ -9,7 +9,7 @@ COPY ["src/PTL.Lambda.Shared/PTL.Lambda.Shared.csproj", "src/PTL.Lambda.Shared/"
 
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet restore "src/PTL.Lambda.DeleteConsultant/PTL.Lambda.DeleteConsultant.csproj" \
-    -r linux-x64 --self-contained true -p:PublishReadyToRun=true
+    -r linux-x64 -p:SelfContained=true -p:PublishReadyToRun=true
 
 COPY . .
 RUN --mount=type=cache,target=/root/.nuget/packages \
