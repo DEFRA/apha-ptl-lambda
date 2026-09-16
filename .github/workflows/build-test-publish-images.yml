@@ -251,16 +251,20 @@ jobs:
       AWS_ROLE_ARN: arn:aws:iam::${{ secrets.AWS_ENV_ACCOUNT }}:role/${{ secrets.AWS_ENV_OIDC_ROLE }}
       EXPECTED_AWS_ACCOUNT_ID: ${{ vars.EXPECTED_AWS_ACCOUNT_ID }}
       EXPECTED_AWS_REGION: ${{ vars.EXPECTED_AWS_REGION }}
-      # Single ECR repo shared by all 4 lambdas (e.g. apha/ptl-lambda-1); each
-      # component publishes its own <component>-<tag> image tag into it.
-      ECR_REPOSITORY: ${{ vars.ECR_LAMBDA_REPOSITORY }}
+      # One ECR repo per lambda (apha/ptl-delete-attachments, apha/ptl-delete-consultant,
+      # apha/ptl-delete-customer-data, apha/ptl-email-service) - resolved per component below.
+      ECR_DELETE_ATTACHMENTS_REPOSITORY: ${{ vars.ECR_DELETE_ATTACHMENTS_REPOSITORY }}
+      ECR_DELETE_CONSULTANT_REPOSITORY: ${{ vars.ECR_DELETE_CONSULTANT_REPOSITORY }}
+      ECR_REMOVE_CUSTOMER_DATA_REPOSITORY: ${{ vars.ECR_REMOVE_CUSTOMER_DATA_REPOSITORY }}
+      ECR_EMAIL_SERVICE_REPOSITORY: ${{ vars.ECR_EMAIL_SERVICE_REPOSITORY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Validate publishing configuration
+      - name: Resolve and validate publishing configuration
+        id: component
         shell: bash
         run: |
           set -euo pipefail
@@ -281,8 +285,20 @@ jobs:
             echo "::error::AWS_ENV_REGION does not match EXPECTED_AWS_REGION."
             exit 1
           }
+
+          case "${{ matrix.component }}" in
+            delete-attachments) ECR_REPOSITORY="${ECR_DELETE_ATTACHMENTS_REPOSITORY}" ;;
+            delete-consultant) ECR_REPOSITORY="${ECR_DELETE_CONSULTANT_REPOSITORY}" ;;
+            remove-customer-data) ECR_REPOSITORY="${ECR_REMOVE_CUSTOMER_DATA_REPOSITORY}" ;;
+            email-service) ECR_REPOSITORY="${ECR_EMAIL_SERVICE_REPOSITORY}" ;;
+            *)
+              echo "::error::Unsupported component: ${{ matrix.component }}"
+              exit 1
+              ;;
+          esac
+
           test -n "${ECR_REPOSITORY}" || {
-            echo "::error::Repository variable ECR_LAMBDA_REPOSITORY is not configured."
+            echo "::error::No ECR repository is configured for ${{ matrix.component }}."
             exit 1
           }
 
@@ -291,6 +307,8 @@ jobs:
             echo "::error::Check AWS_ENV_ACCOUNT and AWS_ENV_OIDC_ROLE; the role ARN must reference the expected account and include a role name."
             exit 1
           }
+
+          echo "ecr_repository=${ECR_REPOSITORY}" >> "${GITHUB_OUTPUT}"
 
       # Reuses the exact image container-validation already built and validated for
       # this commit, instead of building it again from scratch.
@@ -370,14 +388,14 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
           set -euo pipefail
-          IMAGE_TAG="${{ matrix.component }}-sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          IMAGE_TAG="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          IMAGE_URI="${ECR_REGISTRY}/${{ steps.component.outputs.ecr_repository }}:${IMAGE_TAG}"
 
           docker tag "ptl-lambda-${{ matrix.component }}:${GITHUB_SHA}" "${IMAGE_URI}"
           docker push "${IMAGE_URI}"
 
           IMAGE_DIGEST="$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY}" \
+            --repository-name "${{ steps.component.outputs.ecr_repository }}" \
             --image-ids imageTag="${IMAGE_TAG}" \
             --query 'imageDetails[0].imageDigest' \
             --output text)"

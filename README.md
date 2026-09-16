@@ -79,20 +79,22 @@ invocation immediately (visible in CloudWatch Logs) rather than failing silently
 2. **`quality`** - restores, format-checks, builds and tests the whole solution.
 3. **`sonarcloud`** *(optional, gated on the `SONAR_ENABLED` repo variable)*.
 4. **`container-validation`** - builds only the affected functions' Docker images.
-5. **`publish`** *(push to `main` / manual dispatch only)* - pushes the validated image to the shared
-   ECR repository as `<function>-sha-<12-char-sha>-<run-id>-<run-attempt>`.
+5. **`publish`** *(push to `main` / manual dispatch only)* - pushes the validated image to that
+   function's own ECR repository as `sha-<12-char-sha>-<run-id>-<run-attempt>`.
 6. **`gate`** - a single required status check that fails if any of the above didn't succeed.
 
 Only functions whose code changed are built and published on a given run.
 
 ### Required GitHub configuration
 
-All functions publish into **one shared ECR repository**, distinguished by image tag prefix
-(`delete-attachments-...`, `delete-consultant-...`, `remove-customer-data-...`, `email-service-...`):
+Each function publishes into **its own ECR repository**:
 
 | Name | Kind | Example value |
 |---|---|---|
-| `ECR_LAMBDA_REPOSITORY` | repo variable | `apha/ptl-lambda-1` |
+| `ECR_DELETE_ATTACHMENTS_REPOSITORY` | repo variable | `apha/ptl-delete-attachments` |
+| `ECR_DELETE_CONSULTANT_REPOSITORY` | repo variable | `apha/ptl-delete-consultant` |
+| `ECR_REMOVE_CUSTOMER_DATA_REPOSITORY` | repo variable | `apha/ptl-delete-customer-data` |
+| `ECR_EMAIL_SERVICE_REPOSITORY` | repo variable | `apha/ptl-email-service` |
 | `EXPECTED_AWS_ACCOUNT_ID` | repo variable | 12-digit AWS account ID |
 | `EXPECTED_AWS_REGION` | repo variable | `eu-west-2` |
 | `SONAR_ENABLED` | repo variable | `true` / `false` |
