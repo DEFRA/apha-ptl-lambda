@@ -1,0 +1,16 @@
+<Project>
+  <!-- chain up to the solution-root Directory.Build.props so analyzer settings still apply -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <Threshold>80</Threshold>
+    <ThresholdType>line</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+    <!-- Program.cs in each Lambda project is just the Amazon.Lambda.RuntimeSupport bootstrap wiring
+         (see README) - it has no branch logic and isn't meaningfully unit-testable, so it's excluded
+         from the coverage threshold rather than dragging it down artificially. -->
+    <ExcludeByFile>**/Program.cs</ExcludeByFile>
+  </PropertyGroup>
+</Project>

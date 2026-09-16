@@ -10,11 +10,11 @@ processing, deployed as containerised images triggered by Amazon EventBridge.
 | `PTL.Lambda.DeleteAttachments` | Deletes expired internal/published result attachments |
 | `PTL.Lambda.DeleteConsultant` | Removes consultant records that are no longer required |
 | `PTL.Lambda.RemoveCustomerData` | GDPR-compliant scheduled customer data cleanup |
-| `PTL.Lambda.EmailService` | Sends PT-LIMS email notifications via Microsoft Graph API |
+| `PTL.Lambda.EmailService` | Sends PT-LIMS email notifications via GOV.UK Notify |
 | `PTL.Lambda.Shared` | Shared DB connection factory, startup config checks, Lambda config bootstrap |
 
 **Current status: scaffolding.** Each handler is a stub that validates its required configuration
-(database or Graph API options) and returns a sample result describing what it would do.
+(database or GOV.UK Notify options) and returns a sample result describing what it would do.
 
 ## Prerequisites
 
@@ -68,8 +68,8 @@ These should reference Secrets Manager (or SSM Parameter Store) values via the L
 configuration - nothing DB-related is ever baked into the image. Missing/blank values fail the
 invocation immediately (visible in CloudWatch Logs) rather than failing silently later.
 
-`EmailService` instead requires four `GraphApi:*` values (`GraphApi__TenantId`, `GraphApi__ClientId`,
-`GraphApi__ClientSecret`, `GraphApi__SenderUserId`) for a Microsoft Graph app-only mail send.
+`EmailService` instead requires a `Notify:ApiKey` value (`Notify__ApiKey`) for sending via
+[GOV.UK Notify](https://www.notifications.service.gov.uk/).
 
 ## CI/CD
 

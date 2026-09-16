@@ -1,0 +1,40 @@
+# Visual Studio
+.vs/
+
+# Build output
+**/bin/
+**/obj/
+
+# User-specific files
+*.user
+*.suo
+*.rsuser
+*.sln.docstates
+*.slnLaunch.user
+
+# VS Code (if used)
+.vscode/
+
+# Rider
+.idea/
+*.DotSettings.user
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+
+# Test coverage output
+coverage.cobertura.xml
+coverage/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
