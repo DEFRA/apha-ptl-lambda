@@ -40,32 +40,23 @@ public class StartupChecksTests
     }
 
     [Fact]
-    public void RequireGraphApiOptions_ReturnsOptions_WhenAllValuesPresent()
+    public void RequireNotifyOptions_ReturnsOptions_WhenApiKeyPresent()
     {
         var configuration = BuildConfiguration(new Dictionary<string, string?>
         {
-            ["GraphApi:TenantId"] = "tenant-id",
-            ["GraphApi:ClientId"] = "client-id",
-            ["GraphApi:ClientSecret"] = "client-secret",
-            ["GraphApi:SenderUserId"] = "sender-id"
+            ["Notify:ApiKey"] = "test-notify-api-key"
         });
 
-        var options = StartupChecks.RequireGraphApiOptions(configuration);
+        var options = StartupChecks.RequireNotifyOptions(configuration);
 
-        Assert.Equal("tenant-id", options.TenantId);
-        Assert.Equal("sender-id", options.SenderUserId);
+        Assert.Equal("test-notify-api-key", options.ApiKey);
     }
 
     [Fact]
-    public void RequireGraphApiOptions_Throws_WhenClientSecretMissing()
+    public void RequireNotifyOptions_Throws_WhenApiKeyMissing()
     {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["GraphApi:TenantId"] = "tenant-id",
-            ["GraphApi:ClientId"] = "client-id",
-            ["GraphApi:SenderUserId"] = "sender-id"
-        });
+        var configuration = BuildConfiguration(new Dictionary<string, string?>());
 
-        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireGraphApiOptions(configuration));
+        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireNotifyOptions(configuration));
     }
 }

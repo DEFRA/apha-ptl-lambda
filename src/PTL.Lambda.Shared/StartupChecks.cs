@@ -37,27 +37,21 @@ public static class StartupChecks
     }
 
     /// <summary>
-    /// Fails fast at invocation if any Microsoft Graph config value is missing, for the same
-    /// reason as <see cref="RequireDatabaseOptions"/> - a broken secret wiring should be an
-    /// obvious, immediate error rather than a silent send failure.
+    /// Fails fast at invocation if the GOV.UK Notify API key is missing, for the same reason as
+    /// <see cref="RequireDatabaseOptions"/> - a broken secret wiring should be an obvious,
+    /// immediate error rather than a silent send failure.
     /// </summary>
-    public static GraphApiOptions RequireGraphApiOptions(IConfiguration configuration)
+    public static NotifyOptions RequireNotifyOptions(IConfiguration configuration)
     {
-        var tenantId = configuration["GraphApi:TenantId"];
-        var clientId = configuration["GraphApi:ClientId"];
-        var clientSecret = configuration["GraphApi:ClientSecret"];
-        var senderUserId = configuration["GraphApi:SenderUserId"];
+        var apiKey = configuration["Notify:ApiKey"];
 
-        if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(clientId) ||
-            string.IsNullOrWhiteSpace(clientSecret) || string.IsNullOrWhiteSpace(senderUserId))
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "GraphApi:TenantId, GraphApi:ClientId, GraphApi:ClientSecret and GraphApi:SenderUserId must all " +
-                "be configured. Locally, set the GraphApi__TenantId / GraphApi__ClientId / GraphApi__ClientSecret " +
-                "/ GraphApi__SenderUserId environment variables; in a deployed environment, check the Lambda " +
-                "function's environment variable wiring to Secrets Manager.");
+                "Notify:ApiKey must be configured. Locally, set the Notify__ApiKey environment variable; in a " +
+                "deployed environment, check the Lambda function's environment variable wiring to Secrets Manager.");
         }
 
-        return new GraphApiOptions(tenantId, clientId, clientSecret, senderUserId);
+        return new NotifyOptions(apiKey);
     }
 }
