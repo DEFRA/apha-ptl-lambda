@@ -88,6 +88,42 @@ invocation; there is no inbound header to read and nothing for a caller to suppl
 functions are triggered by EventBridge schedules rather than by another service's HTTP call. To trace
 one invocation end-to-end, filter/grep its CloudWatch Logs group for that `AwsRequestId`.
 
+### Example: logging from application code
+
+Once the cleanup/send logic replaces a stub, log with `Serilog.Log` (or inject `Serilog.ILogger` if the
+type takes a constructor) and a structured message template - never string interpolation - so values
+stay queryable as real JSON fields rather than being flattened into the message text:
+
+```csharp
+public static class DeleteAttachmentsFunction
+{
+    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
+        LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, async () =>
+        {
+            var configuration = LambdaConfiguration.Build();
+            var options = StartupChecks.RequireDatabaseOptions(configuration);
+
+            var connectionFactory = new SqlConnectionFactory(configuration);
+            using var connection = connectionFactory.CreateConnection();
+
+            var deletedCount = await AttachmentCleanup.DeleteExpiredAsync(connection);
+            Log.Information("Deleted {DeletedCount} expired attachments from {Database}", deletedCount, options.Name);
+
+            return new CleanupResult("DeleteAttachments", "Completed", $"Deleted {deletedCount} attachments.", DateTime.UtcNow);
+        });
+}
+```
+
+Because `FunctionName` and `AwsRequestId` are already in the Serilog `LogContext` for the invocation (see
+above), the `Log.Information` line is automatically enriched with both - no need to pass them around
+manually. The resulting CloudWatch Logs Insights query to see everything logged for one invocation:
+
+```
+fields @timestamp, AwsRequestId, DeletedCount, @message
+| filter AwsRequestId = "…"
+| sort @timestamp asc
+```
+
 ## CI/CD
 
 [`.github/workflows/build-test-publish-images.yml`](.github/workflows/build-test-publish-images.yml):
