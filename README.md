@@ -71,6 +71,23 @@ invocation immediately (visible in CloudWatch Logs) rather than failing silently
 `EmailService` instead requires a `Notify:ApiKey` value (`Notify__ApiKey`) for sending via
 [GOV.UK Notify](https://www.notifications.service.gov.uk/).
 
+## Logging & correlation IDs
+
+Every function logs structured JSON to stdout via Serilog (`PTL.Lambda.Shared/LambdaLogging`, compact
+formatter, console sink only - no file sinks). Lambda ships stdout/stderr to CloudWatch Logs
+automatically, so there is no `awslogs` driver or log-group wiring to configure in the function itself.
+To follow a function's logs, tail its CloudWatch Logs group (`/aws/lambda/<function-name>`) - locally,
+just read the console output of the Docker/RIE process.
+
+**Correlation is automatic, not manual.** Each `FunctionHandler` runs its body through
+`LambdaLogging.InvokeAsync(functionName, context, ...)`, which pushes `FunctionName` and the
+invocation's `AwsRequestId` into the Serilog `LogContext` (so every log line during the invocation
+carries them) and logs one structured completion/failure line with the elapsed time - the Lambda
+equivalent of the web apps' one-line-per-request log. `AwsRequestId` is assigned by AWS for every
+invocation; there is no inbound header to read and nothing for a caller to supply, since these
+functions are triggered by EventBridge schedules rather than by another service's HTTP call. To trace
+one invocation end-to-end, filter/grep its CloudWatch Logs group for that `AwsRequestId`.
+
 ## CI/CD
 
 [`.github/workflows/build-test-publish-images.yml`](.github/workflows/build-test-publish-images.yml):
