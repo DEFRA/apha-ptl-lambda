@@ -5,7 +5,7 @@
   <PropertyGroup>
     <CollectCoverage>true</CollectCoverage>
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
-    <Threshold>80</Threshold>
+    <Threshold>90</Threshold>
     <ThresholdType>line</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
     <!-- Program.cs in each Lambda project is just the Amazon.Lambda.RuntimeSupport bootstrap wiring
