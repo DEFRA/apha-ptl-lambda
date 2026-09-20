@@ -71,6 +71,59 @@ invocation immediately (visible in CloudWatch Logs) rather than failing silently
 `EmailService` instead requires a `Notify:ApiKey` value (`Notify__ApiKey`) for sending via
 [GOV.UK Notify](https://www.notifications.service.gov.uk/).
 
+## Logging & correlation IDs
+
+Every function logs structured JSON to stdout via Serilog (`PTL.Lambda.Shared/LambdaLogging`, compact
+formatter, console sink only - no file sinks). Lambda ships stdout/stderr to CloudWatch Logs
+automatically, so there is no `awslogs` driver or log-group wiring to configure in the function itself.
+To follow a function's logs, tail its CloudWatch Logs group (`/aws/lambda/<function-name>`) - locally,
+just read the console output of the Docker/RIE process.
+
+**Correlation is automatic, not manual.** Each `FunctionHandler` runs its body through
+`LambdaLogging.InvokeAsync(functionName, context, ...)`, which pushes `FunctionName` and the
+invocation's `AwsRequestId` into the Serilog `LogContext` (so every log line during the invocation
+carries them) and logs one structured completion/failure line with the elapsed time - the Lambda
+equivalent of the web apps' one-line-per-request log. `AwsRequestId` is assigned by AWS for every
+invocation; there is no inbound header to read and nothing for a caller to supply, since these
+functions are triggered by EventBridge schedules rather than by another service's HTTP call. To trace
+one invocation end-to-end, filter/grep its CloudWatch Logs group for that `AwsRequestId`.
+
+### Example: logging from application code
+
+Once the cleanup/send logic replaces a stub, log with `Serilog.Log` (or inject `Serilog.ILogger` if the
+type takes a constructor) and a structured message template - never string interpolation - so values
+stay queryable as real JSON fields rather than being flattened into the message text:
+
+```csharp
+public static class DeleteAttachmentsFunction
+{
+    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
+        LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, async () =>
+        {
+            var configuration = LambdaConfiguration.Build();
+            var options = StartupChecks.RequireDatabaseOptions(configuration);
+
+            var connectionFactory = new SqlConnectionFactory(configuration);
+            using var connection = connectionFactory.CreateConnection();
+
+            var deletedCount = await AttachmentCleanup.DeleteExpiredAsync(connection);
+            Log.Information("Deleted {DeletedCount} expired attachments from {Database}", deletedCount, options.Name);
+
+            return new CleanupResult("DeleteAttachments", "Completed", $"Deleted {deletedCount} attachments.", DateTime.UtcNow);
+        });
+}
+```
+
+Because `FunctionName` and `AwsRequestId` are already in the Serilog `LogContext` for the invocation (see
+above), the `Log.Information` line is automatically enriched with both - no need to pass them around
+manually. The resulting CloudWatch Logs Insights query to see everything logged for one invocation:
+
+```
+fields @timestamp, AwsRequestId, DeletedCount, @message
+| filter AwsRequestId = "…"
+| sort @timestamp asc
+```
+
 ## CI/CD
 
 [`.github/workflows/build-test-publish-images.yml`](.github/workflows/build-test-publish-images.yml):

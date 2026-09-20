@@ -11,21 +11,20 @@ namespace PTL.Lambda.EmailService;
 /// </summary>
 public static class EmailServiceFunction
 {
-    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context)
-    {
-        context.Logger.LogInformation("EmailService Lambda invoked.");
+    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
+        LambdaLogging.InvokeAsync(nameof(EmailServiceFunction), context, () =>
+        {
+            var configuration = LambdaConfiguration.Build();
+            // Discarded - only the fail-fast validation matters until send logic is migrated.
+            _ = StartupChecks.RequireNotifyOptions(configuration);
 
-        var configuration = LambdaConfiguration.Build();
-        // Discarded - only the fail-fast validation matters until send logic is migrated.
-        _ = StartupChecks.RequireNotifyOptions(configuration);
+            var result = new CleanupResult(
+                Service: "EmailService",
+                Status: "Stub",
+                Message: "EmailService Lambda scaffold is wired up to GOV.UK Notify, but template loading and " +
+                         "send logic has not been migrated yet. Replace this stub in Function.cs.",
+                InvokedAtUtc: DateTime.UtcNow);
 
-        var result = new CleanupResult(
-            Service: "EmailService",
-            Status: "Stub",
-            Message: "EmailService Lambda scaffold is wired up to GOV.UK Notify, but template loading and " +
-                     "send logic has not been migrated yet. Replace this stub in Function.cs.",
-            InvokedAtUtc: DateTime.UtcNow);
-
-        return Task.FromResult(result);
-    }
+            return Task.FromResult(result);
+        });
 }
