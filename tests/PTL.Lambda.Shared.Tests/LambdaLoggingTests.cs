@@ -1,4 +1,5 @@
 using Amazon.Lambda.TestUtilities;
+using Serilog;
 
 namespace PTL.Lambda.Shared.Tests;
 
@@ -8,7 +9,11 @@ public class LambdaLoggingTests
     public void Configure_IsIdempotent()
     {
         LambdaLogging.Configure();
+        var loggerAfterFirstCall = Log.Logger;
+
         LambdaLogging.Configure();
+
+        Assert.Same(loggerAfterFirstCall, Log.Logger);
     }
 
     [Fact]
