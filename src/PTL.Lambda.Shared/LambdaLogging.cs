@@ -71,14 +71,13 @@ public static class LambdaLogging
             }
             catch (Exception exception)
             {
-                exception.Data["FunctionName"] = functionName;
-                exception.Data["AwsRequestId"] = context.AwsRequestId;
-                exception.Data["ElapsedMilliseconds"] = stopwatch.Elapsed.TotalMilliseconds;
                 Log.Error(
                     exception,
                     "Lambda invocation {FunctionName} failed after {ElapsedMilliseconds} ms",
                     functionName, stopwatch.Elapsed.TotalMilliseconds);
-                throw;
+                throw new LambdaInvocationException(
+                    $"Lambda invocation {functionName} failed after {stopwatch.Elapsed.TotalMilliseconds} ms",
+                    exception);
             }
         }
     }

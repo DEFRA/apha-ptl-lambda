@@ -50,10 +50,11 @@ public class LambdaLoggingTests
 
         try
         {
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            var thrown = await Assert.ThrowsAsync<LambdaInvocationException>(() =>
                 LambdaLogging.InvokeAsync<string>("TestFunction", context, () =>
                     throw new InvalidOperationException("boom")));
 
+            Assert.IsType<InvalidOperationException>(thrown.InnerException);
             var output = writer.ToString();
             Assert.Contains("TestFunction", output);
             Assert.Contains("boom", output);
