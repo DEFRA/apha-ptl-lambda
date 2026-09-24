@@ -38,25 +38,4 @@ public class StartupChecksTests
 
         Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireDatabaseOptions(configuration));
     }
-
-    [Fact]
-    public void RequireNotifyOptions_ReturnsOptions_WhenApiKeyPresent()
-    {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["Notify:ApiKey"] = "test-notify-api-key"
-        });
-
-        var options = StartupChecks.RequireNotifyOptions(configuration);
-
-        Assert.Equal("test-notify-api-key", options.ApiKey);
-    }
-
-    [Fact]
-    public void RequireNotifyOptions_Throws_WhenApiKeyMissing()
-    {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>());
-
-        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireNotifyOptions(configuration));
-    }
 }

@@ -35,23 +35,4 @@ public static class StartupChecks
 
         return new DatabaseOptions(host, name, user, password, trustServerCertificate);
     }
-
-    /// <summary>
-    /// Fails fast at invocation if the GOV.UK Notify API key is missing, for the same reason as
-    /// <see cref="RequireDatabaseOptions"/> - a broken secret wiring should be an obvious,
-    /// immediate error rather than a silent send failure.
-    /// </summary>
-    public static NotifyOptions RequireNotifyOptions(IConfiguration configuration)
-    {
-        var apiKey = configuration["Notify:ApiKey"];
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException(
-                "Notify:ApiKey must be configured. Locally, set the Notify__ApiKey environment variable; in a " +
-                "deployed environment, check the Lambda function's environment variable wiring to Secrets Manager.");
-        }
-
-        return new NotifyOptions(apiKey);
-    }
 }

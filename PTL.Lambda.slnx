@@ -10,13 +10,11 @@
     <Project Path="src/PTL.Lambda.DeleteAttachments/PTL.Lambda.DeleteAttachments.csproj" />
     <Project Path="src/PTL.Lambda.DeleteConsultant/PTL.Lambda.DeleteConsultant.csproj" />
     <Project Path="src/PTL.Lambda.RemoveCustomerData/PTL.Lambda.RemoveCustomerData.csproj" />
-    <Project Path="src/PTL.Lambda.EmailService/PTL.Lambda.EmailService.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PTL.Lambda.Shared.Tests/PTL.Lambda.Shared.Tests.csproj" />
     <Project Path="tests/PTL.Lambda.DeleteAttachments.Tests/PTL.Lambda.DeleteAttachments.Tests.csproj" />
     <Project Path="tests/PTL.Lambda.DeleteConsultant.Tests/PTL.Lambda.DeleteConsultant.Tests.csproj" />
     <Project Path="tests/PTL.Lambda.RemoveCustomerData.Tests/PTL.Lambda.RemoveCustomerData.Tests.csproj" />
-    <Project Path="tests/PTL.Lambda.EmailService.Tests/PTL.Lambda.EmailService.Tests.csproj" />
   </Folder>
 </Solution>

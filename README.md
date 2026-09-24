@@ -10,11 +10,10 @@ processing, deployed as containerised images triggered by Amazon EventBridge.
 | `PTL.Lambda.DeleteAttachments` | Deletes expired internal/published result attachments |
 | `PTL.Lambda.DeleteConsultant` | Removes consultant records that are no longer required |
 | `PTL.Lambda.RemoveCustomerData` | GDPR-compliant scheduled customer data cleanup |
-| `PTL.Lambda.EmailService` | Sends PT-LIMS email notifications via GOV.UK Notify |
 | `PTL.Lambda.Shared` | Shared DB connection factory, startup config checks, Lambda config bootstrap |
 
-**Current status: scaffolding.** Each handler is a stub that validates its required configuration
-(database or GOV.UK Notify options) and returns a sample result describing what it would do.
+**Current status: scaffolding.** Each handler is a stub that validates its required database
+configuration and returns a sample result describing what it would do.
 
 ## Prerequisites
 
@@ -67,9 +66,6 @@ connection string:
 These should reference Secrets Manager (or SSM Parameter Store) values via the Lambda function's
 configuration - nothing DB-related is ever baked into the image. Missing/blank values fail the
 invocation immediately (visible in CloudWatch Logs) rather than failing silently later.
-
-`EmailService` instead requires a `Notify:ApiKey` value (`Notify__ApiKey`) for sending via
-[GOV.UK Notify](https://www.notifications.service.gov.uk/).
 
 ## Logging & correlation IDs
 
@@ -147,7 +143,6 @@ Each function publishes into **its own ECR repository**:
 | `ECR_DELETE_ATTACHMENTS_REPOSITORY` | repo variable | `apha/ptl-delete-attachments` |
 | `ECR_DELETE_CONSULTANT_REPOSITORY` | repo variable | `apha/ptl-delete-consultant` |
 | `ECR_REMOVE_CUSTOMER_DATA_REPOSITORY` | repo variable | `apha/ptl-delete-customer-data` |
-| `ECR_EMAIL_SERVICE_REPOSITORY` | repo variable | `apha/ptl-email-service` |
 | `EXPECTED_AWS_ACCOUNT_ID` | repo variable | 12-digit AWS account ID |
 | `EXPECTED_AWS_REGION` | repo variable | `eu-west-2` |
 | `SONAR_ENABLED` | repo variable | `true` / `false` |
