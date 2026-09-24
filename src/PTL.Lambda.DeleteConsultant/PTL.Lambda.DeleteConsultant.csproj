@@ -7,6 +7,9 @@
     <OutputType>Exe</OutputType>
     <AWSProjectType>Lambda</AWSProjectType>
     <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+    <!-- public.ecr.aws/lambda/provided:al2023 has no ICU package; this lambda has no
+         culture-specific formatting needs, so avoid the runtime ICU dependency entirely. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
