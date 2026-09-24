@@ -38,4 +38,43 @@ public class StartupChecksTests
 
         Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireDatabaseOptions(configuration));
     }
+
+    [Fact]
+    public void RequireDatabaseOptions_Throws_WhenHostMissing()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Database:Name"] = "PtlLambda",
+            ["Database:User"] = "svc-user",
+            ["Database:Password"] = "svc-password"
+        });
+
+        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireDatabaseOptions(configuration));
+    }
+
+    [Fact]
+    public void RequireDatabaseOptions_Throws_WhenNameMissing()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Database:Host"] = "db-host",
+            ["Database:User"] = "svc-user",
+            ["Database:Password"] = "svc-password"
+        });
+
+        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireDatabaseOptions(configuration));
+    }
+
+    [Fact]
+    public void RequireDatabaseOptions_Throws_WhenUserMissing()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Database:Host"] = "db-host",
+            ["Database:Name"] = "PtlLambda",
+            ["Database:Password"] = "svc-password"
+        });
+
+        Assert.Throws<InvalidOperationException>(() => StartupChecks.RequireDatabaseOptions(configuration));
+    }
 }
