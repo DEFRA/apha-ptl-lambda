@@ -21,7 +21,12 @@ public class DatabaseConnectivityTests
     {
         var connectionFactory = new FakeDbConnectionFactory(throwOnOpen: true);
 
-        Assert.Throws<InvalidOperationException>(() => DatabaseConnectivity.VerifyConnection(connectionFactory, Options));
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => DatabaseConnectivity.VerifyConnection(connectionFactory, Options));
+
+        Assert.Contains(Options.Name, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(Options.Host, exception.Message, StringComparison.Ordinal);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
     [Fact]

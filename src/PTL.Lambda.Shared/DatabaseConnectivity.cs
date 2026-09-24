@@ -23,11 +23,11 @@ public static class DatabaseConnectivity
         }
         catch (Exception exception)
         {
-            Log.Error(
-                exception,
-                "Database connection to database {DatabaseName} on host {DatabaseHost} failed",
-                options.Name, options.Host);
-            throw;
+            // Rethrow with DB context instead of logging-then-rethrowing the same exception
+            // unchanged (Sonar S2139) - LambdaLogging's own catch-all logs the final exception.
+            throw new InvalidOperationException(
+                $"Database connection to database '{options.Name}' on host '{options.Host}' failed.",
+                exception);
         }
 
         Log.Information(

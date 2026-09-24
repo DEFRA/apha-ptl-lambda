@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Amazon.Lambda.Core;
 using PTL.Lambda.Shared;
 
@@ -10,6 +11,10 @@ namespace PTL.Lambda.DeleteConsultant;
 /// </summary>
 public static class DeleteConsultantFunction
 {
+    // Excluded from coverage: pure delegation to the tested overload below with a real
+    // SqlConnectionFactory, which would require an actual DB connection to exercise (see
+    // README's Program.cs exclusion rationale for the same class of non-testable wiring).
+    [ExcludeFromCodeCoverage]
     public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
         FunctionHandler(input, context, connectionFactory: null);
 
