@@ -22,6 +22,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM public.ecr.aws/lambda/provided:al2023 AS final
 WORKDIR /var/task
 
+# Microsoft.Data.SqlClient requires ICU and throws NotSupportedException under
+# InvariantGlobalization - al2023's minimal image has no ICU package by default.
+RUN dnf install -y libicu && dnf clean all
+
 COPY --from=build /app/publish .
 
 ENTRYPOINT ["./PTL.Lambda.DeleteConsultant"]
