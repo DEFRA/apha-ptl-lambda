@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Amazon.Lambda.Core;
 using PTL.Lambda.Shared;
 
@@ -10,22 +11,29 @@ namespace PTL.Lambda.RemoveCustomerData;
 /// </summary>
 public static class RemoveCustomerDataFunction
 {
+    // Excluded from coverage: pure delegation to the tested overload below with a real
+    // SqlConnectionFactory, which would require an actual DB connection to exercise (see
+    // README's Program.cs exclusion rationale for the same class of non-testable wiring).
+    [ExcludeFromCodeCoverage]
     public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
-        LambdaLogging.InvokeAsync(nameof(RemoveCustomerDataFunction), context, async () =>
+        FunctionHandler(input, context, connectionFactory: null);
+
+    // Internal overload lets tests inject a fake IDbConnectionFactory instead of opening a real
+    // SQL Server socket (see PTL.Lambda.RemoveCustomerData.Tests, InternalsVisibleTo below).
+    internal static Task<CleanupResult> FunctionHandler(
+        object input, ILambdaContext context, IDbConnectionFactory? connectionFactory) =>
+        LambdaLogging.InvokeAsync(nameof(RemoveCustomerDataFunction), context, () =>
         {
             var configuration = LambdaConfiguration.Build();
             var options = StartupChecks.RequireDatabaseOptions(configuration);
 
-            // Proves the DB env vars are wired correctly without performing any network I/O -
-            // constructing a SqlConnection does not open a socket, only .Open() would.
-            var connectionFactory = new SqlConnectionFactory(configuration);
-            using var connection = connectionFactory.CreateConnection();
+            DatabaseConnectivity.VerifyConnection(connectionFactory ?? new SqlConnectionFactory(configuration), options);
 
-            return new CleanupResult(
+            return Task.FromResult(new CleanupResult(
                 Service: "RemoveCustomerData",
                 Status: "Stub",
-                Message: $"RemoveCustomerData Lambda scaffold is wired up to database '{options.Name}' on '{options.Host}', " +
+                Message: $"RemoveCustomerData Lambda verified its database connection to '{options.Name}' on '{options.Host}', " +
                          "but the GDPR cleanup business logic has not been migrated yet. Replace this stub in Function.cs.",
-                InvokedAtUtc: DateTime.UtcNow);
+                InvokedAtUtc: DateTime.UtcNow));
         });
 }

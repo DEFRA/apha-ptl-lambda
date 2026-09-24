@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ptl-lambda-images-${{ github.ref }}
@@ -25,6 +24,11 @@ jobs:
     name: Detect affected lambdas
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # pull-requests:read is needed here (not at workflow level) for dorny/paths-filter
+    # to read the PR diff via the GitHub API.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       components: ${{ steps.components.outputs.result }}
       dockerfiles: ${{ steps.dockerfiles.outputs.map }}
@@ -38,7 +42,7 @@ jobs:
       - name: Detect changed paths
         id: filter
         if: github.event_name != 'workflow_dispatch'
-        uses: dorny/paths-filter@v4.0.3
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             delete-attachments:
@@ -65,21 +69,13 @@ jobs:
               - 'PTL.Lambda.slnx'
               - 'Directory.Build.*'
               - '.github/workflows/build-test-publish-images.yml'
-            email-service:
-              - 'src/PTL.Lambda.EmailService/**'
-              - 'src/PTL.Lambda.Shared/**'
-              - 'tests/PTL.Lambda.EmailService.Tests/**'
-              - 'tests/PTL.Lambda.Shared.Tests/**'
-              - 'PTL.Lambda.slnx'
-              - 'Directory.Build.*'
-              - '.github/workflows/build-test-publish-images.yml'
 
       - name: Resolve affected components
         id: components
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo 'result=["delete-attachments","delete-consultant","remove-customer-data","email-service"]' >> "${GITHUB_OUTPUT}"
+            echo 'result=["delete-attachments","delete-consultant","remove-customer-data"]' >> "${GITHUB_OUTPUT}"
           else
             echo 'result=${{ steps.filter.outputs.changes }}' >> "${GITHUB_OUTPUT}"
           fi
@@ -90,7 +86,7 @@ jobs:
         id: dockerfiles
         shell: bash
         run: |
-          echo 'map={"delete-attachments":"src/PTL.Lambda.DeleteAttachments/Dockerfile","delete-consultant":"src/PTL.Lambda.DeleteConsultant/Dockerfile","remove-customer-data":"src/PTL.Lambda.RemoveCustomerData/Dockerfile","email-service":"src/PTL.Lambda.EmailService/Dockerfile"}' >> "${GITHUB_OUTPUT}"
+          echo 'map={"delete-attachments":"src/PTL.Lambda.DeleteAttachments/Dockerfile","delete-consultant":"src/PTL.Lambda.DeleteConsultant/Dockerfile","remove-customer-data":"src/PTL.Lambda.RemoveCustomerData/Dockerfile"}' >> "${GITHUB_OUTPUT}"
 
   quality:
     name: Format, build and test solution
@@ -283,11 +279,10 @@ jobs:
       EXPECTED_AWS_ACCOUNT_ID: ${{ vars.EXPECTED_AWS_ACCOUNT_ID }}
       EXPECTED_AWS_REGION: ${{ vars.EXPECTED_AWS_REGION }}
       # One ECR repo per lambda (apha/ptl-delete-attachments, apha/ptl-delete-consultant,
-      # apha/ptl-delete-customer-data, apha/ptl-email-service) - resolved per component below.
+      # apha/ptl-delete-customer-data) - resolved per component below.
       ECR_DELETE_ATTACHMENTS_REPOSITORY: ${{ vars.ECR_DELETE_ATTACHMENTS_REPOSITORY }}
       ECR_DELETE_CONSULTANT_REPOSITORY: ${{ vars.ECR_DELETE_CONSULTANT_REPOSITORY }}
       ECR_REMOVE_CUSTOMER_DATA_REPOSITORY: ${{ vars.ECR_REMOVE_CUSTOMER_DATA_REPOSITORY }}
-      ECR_EMAIL_SERVICE_REPOSITORY: ${{ vars.ECR_EMAIL_SERVICE_REPOSITORY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -321,7 +316,6 @@ jobs:
             delete-attachments) ECR_REPOSITORY="${ECR_DELETE_ATTACHMENTS_REPOSITORY}" ;;
             delete-consultant) ECR_REPOSITORY="${ECR_DELETE_CONSULTANT_REPOSITORY}" ;;
             remove-customer-data) ECR_REPOSITORY="${ECR_REMOVE_CUSTOMER_DATA_REPOSITORY}" ;;
-            email-service) ECR_REPOSITORY="${ECR_EMAIL_SERVICE_REPOSITORY}" ;;
             *)
               echo "::error::Unsupported component: ${{ matrix.component }}"
               exit 1
@@ -389,7 +383,7 @@ jobs:
           PY
 
       - name: Configure AWS credentials through OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -408,7 +402,7 @@ jobs:
 
       - name: Log in to Amazon ECR
         id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2.1.6
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
         with:
           mask-password: true
 

@@ -1,5 +1,6 @@
 using Amazon.Lambda.TestUtilities;
 using PTL.Lambda.DeleteAttachments;
+using PTL.Lambda.Shared;
 
 namespace PTL.Lambda.DeleteAttachments.Tests;
 
@@ -15,14 +16,24 @@ public class FunctionTests
     }
 
     [Fact]
-    public async Task FunctionHandler_ReturnsStubResult()
+    public async Task FunctionHandler_ReturnsStubResult_WhenConnectionOpensSuccessfully()
     {
         var context = new TestLambdaContext();
 
-        var result = await DeleteAttachmentsFunction.FunctionHandler(new { }, context);
+        var result = await DeleteAttachmentsFunction.FunctionHandler(new { }, context, new FakeDbConnectionFactory());
 
         Assert.Equal("DeleteAttachments", result.Service);
         Assert.Equal("Stub", result.Status);
         Assert.Contains("PtlLambda", result.Message);
+    }
+
+    [Fact]
+    public async Task FunctionHandler_Throws_WhenConnectionFails()
+    {
+        var context = new TestLambdaContext();
+        var connectionFactory = new FakeDbConnectionFactory(throwOnOpen: true);
+
+        await Assert.ThrowsAsync<LambdaInvocationException>(
+            () => DeleteAttachmentsFunction.FunctionHandler(new { }, context, connectionFactory));
     }
 }
