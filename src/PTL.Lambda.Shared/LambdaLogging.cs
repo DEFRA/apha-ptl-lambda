@@ -16,32 +16,21 @@ namespace PTL.Lambda.Shared;
 /// </summary>
 public static class LambdaLogging
 {
-    private static readonly Lock InitLock = new();
-    private static bool _initialized;
+    // Lazy<T> handles thread-safe "run once" semantics internally, avoiding a hand-rolled
+    // double-checked lock whose second (in-lock) check is only reachable under a genuine
+    // race and so can never be deterministically covered by a unit test.
+    private static readonly Lazy<bool> Initializer = new(() =>
+    {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.FromLogContext()
+            .WriteTo.Console(new CompactJsonFormatter())
+            .CreateLogger();
+
+        return true;
+    });
 
     /// <summary>Idempotent: safe to call on every invocation, only configures Serilog once.</summary>
-    public static void Configure()
-    {
-        if (_initialized)
-        {
-            return;
-        }
-
-        lock (InitLock)
-        {
-            if (_initialized)
-            {
-                return;
-            }
-
-            Log.Logger = new LoggerConfiguration()
-                .Enrich.FromLogContext()
-                .WriteTo.Console(new CompactJsonFormatter())
-                .CreateLogger();
-
-            _initialized = true;
-        }
-    }
+    public static void Configure() => _ = Initializer.Value;
 
     /// <summary>
     /// Runs <paramref name="invocation"/> with <paramref name="functionName"/> and the invocation's

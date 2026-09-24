@@ -16,18 +16,18 @@ public static class RemoveCustomerDataFunction
     // README's Program.cs exclusion rationale for the same class of non-testable wiring).
     [ExcludeFromCodeCoverage]
     public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
-        FunctionHandler(input, context, connectionFactory: null);
+        FunctionHandler(input, context, new SqlConnectionFactory(LambdaConfiguration.Build()));
 
     // Internal overload lets tests inject a fake IDbConnectionFactory instead of opening a real
     // SQL Server socket (see PTL.Lambda.RemoveCustomerData.Tests, InternalsVisibleTo below).
     internal static Task<CleanupResult> FunctionHandler(
-        object input, ILambdaContext context, IDbConnectionFactory? connectionFactory) =>
+        object input, ILambdaContext context, IDbConnectionFactory connectionFactory) =>
         LambdaLogging.InvokeAsync(nameof(RemoveCustomerDataFunction), context, () =>
         {
             var configuration = LambdaConfiguration.Build();
             var options = StartupChecks.RequireDatabaseOptions(configuration);
 
-            DatabaseConnectivity.VerifyConnection(connectionFactory ?? new SqlConnectionFactory(configuration), options);
+            DatabaseConnectivity.VerifyConnection(connectionFactory, options);
 
             return Task.FromResult(new CleanupResult(
                 Service: "RemoveCustomerData",
