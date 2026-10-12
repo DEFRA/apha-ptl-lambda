@@ -4,6 +4,12 @@ using Serilog;
 
 namespace PTL.Lambda.Shared;
 
+/// <summary>A static field inside a generic type is not shared across its closed constructions (Sonar S2743) - this constant lives in a non-generic companion type instead.</summary>
+file static class BatchCleanupEngineDefaults
+{
+    public static readonly TimeSpan TimeBudget = TimeSpan.FromMinutes(12);
+}
+
 /// <summary>
 /// Generic replacement for the shared batch-paging/dry-run/transaction/audit pattern that was
 /// duplicated across DeleteAttachmentsService, DeleteConsultantService and RemoveCustomerDataService
@@ -15,7 +21,6 @@ namespace PTL.Lambda.Shared;
 public sealed class BatchCleanupEngine<TRecord> where TRecord : ICleanupRecord
 {
     private const int SampleSize = 5;
-    private static readonly TimeSpan DefaultTimeBudget = TimeSpan.FromMinutes(12);
 
     private readonly string _cleanupName;
     private readonly IBatchCleanupRepository<TRecord> _repository;
@@ -35,7 +40,7 @@ public sealed class BatchCleanupEngine<TRecord> where TRecord : ICleanupRecord
         _cleanupName = cleanupName;
         _repository = repository;
         _auditLogger = auditLogger;
-        _timeBudget = timeBudget ?? DefaultTimeBudget;
+        _timeBudget = timeBudget ?? BatchCleanupEngineDefaults.TimeBudget;
     }
 
     /// <summary>
