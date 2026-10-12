@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PTL.Lambda.Shared\PTL.Lambda.Shared.csproj" />
+    <ProjectReference Include="..\PTL.Lambda.TestKit\PTL.Lambda.TestKit.csproj" />
   </ItemGroup>
 
 </Project>
