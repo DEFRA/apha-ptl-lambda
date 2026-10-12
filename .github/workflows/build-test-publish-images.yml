@@ -3,18 +3,52 @@ name: Build, Test and Publish PT-LIMS Lambda Images
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   push:
     branches: [main]
-  # Manual "rebuild and publish everything" trigger, independent of what changed -
-  # e.g. to validate a change to this pipeline itself, or to re-publish on demand.
   workflow_dispatch:
+    inputs:
+      delete_attachments_release_type:
+        description: DeleteAttachments release increment; choose none when it is not being released
+        required: true
+        default: none
+        type: choice
+        options: [none, patch, minor, major]
+      delete_consultant_release_type:
+        description: DeleteConsultant release increment; choose none when it is not being released
+        required: true
+        default: none
+        type: choice
+        options: [none, patch, minor, major]
+      remove_customer_data_release_type:
+        description: RemoveCustomerData release increment; choose none when it is not being released
+        required: true
+        default: none
+        type: choice
+        options: [none, patch, minor, major]
 
-permissions:
-  contents: read
+permissions: {}
 
+# Pull-request release-label contract:
+# - DeleteAttachments: release:delete-attachments:patch, release:delete-attachments:minor or release:delete-attachments:major
+# - DeleteConsultant: release:delete-consultant:patch, release:delete-consultant:minor or release:delete-consultant:major
+# - RemoveCustomerData: release:remove-customer-data:patch, release:remove-customer-data:minor or release:remove-customer-data:major
+# A changed component requires exactly one matching label. An unchanged
+# component must not have a release label.
+
+# Dynamic semantic-version rules are maintained independently per component:
+# - No existing tag + patch = 0.0.1
+# - No existing tag + minor = 0.1.0
+# - delete-attachments-v0.1.0 + patch = delete-attachments-v0.1.1
+# - delete-attachments-v0.1.0 + minor = delete-attachments-v0.2.0
+# - delete-consultant and remove-customer-data follow the same independent sequence.
+
+# Production releases are serialized so two merges cannot calculate the same
+# next semantic version. Pull-request checks run independently; they are not
+# cancelled by a newer run in the current queue configuration.
 concurrency:
-  group: ptl-lambda-images-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('ptl-lambda-pr-{0}-{1}', github.event.pull_request.number, github.run_id) || 'ptl-lambda-production-release' }}
+  queue: max
 
 env:
   DOTNET_VERSION: "10.0.x"
@@ -50,34 +84,62 @@ jobs:
               - 'src/PTL.Lambda.Shared/**'
               - 'tests/PTL.Lambda.DeleteAttachments.Tests/**'
               - 'tests/PTL.Lambda.Shared.Tests/**'
+              - 'tests/PTL.Lambda.TestKit/**'
               - 'PTL.Lambda.slnx'
               - 'Directory.Build.*'
+              - 'SonarQube.Analysis.xml'
               - '.github/workflows/build-test-publish-images.yml'
             delete-consultant:
               - 'src/PTL.Lambda.DeleteConsultant/**'
               - 'src/PTL.Lambda.Shared/**'
               - 'tests/PTL.Lambda.DeleteConsultant.Tests/**'
               - 'tests/PTL.Lambda.Shared.Tests/**'
+              - 'tests/PTL.Lambda.TestKit/**'
               - 'PTL.Lambda.slnx'
               - 'Directory.Build.*'
+              - 'SonarQube.Analysis.xml'
               - '.github/workflows/build-test-publish-images.yml'
             remove-customer-data:
               - 'src/PTL.Lambda.RemoveCustomerData/**'
               - 'src/PTL.Lambda.Shared/**'
               - 'tests/PTL.Lambda.RemoveCustomerData.Tests/**'
               - 'tests/PTL.Lambda.Shared.Tests/**'
+              - 'tests/PTL.Lambda.TestKit/**'
               - 'PTL.Lambda.slnx'
               - 'Directory.Build.*'
+              - 'SonarQube.Analysis.xml'
               - '.github/workflows/build-test-publish-images.yml'
 
       - name: Resolve affected components
         id: components
         shell: bash
+        env:
+          DETECTED_COMPONENTS: ${{ steps.filter.outputs.changes }}
+          MANUAL_DELETE_ATTACHMENTS_RELEASE_TYPE: ${{ inputs.delete_attachments_release_type }}
+          MANUAL_DELETE_CONSULTANT_RELEASE_TYPE: ${{ inputs.delete_consultant_release_type }}
+          MANUAL_REMOVE_CUSTOMER_DATA_RELEASE_TYPE: ${{ inputs.remove_customer_data_release_type }}
         run: |
+          set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo 'result=["delete-attachments","delete-consultant","remove-customer-data"]' >> "${GITHUB_OUTPUT}"
+            if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+              echo "::error::Production workflow dispatches must run from the main branch."
+              exit 1
+            fi
+            COMPONENTS='[]'
+            for PAIR in "delete-attachments:${MANUAL_DELETE_ATTACHMENTS_RELEASE_TYPE}" "delete-consultant:${MANUAL_DELETE_CONSULTANT_RELEASE_TYPE}" "remove-customer-data:${MANUAL_REMOVE_CUSTOMER_DATA_RELEASE_TYPE}"; do
+              COMPONENT="${PAIR%%:*}"
+              RELEASE_TYPE="${PAIR#*:}"
+              if [[ "${RELEASE_TYPE}" != "none" ]]; then
+                COMPONENTS="$(jq -c --arg component "${COMPONENT}" '. + [$component]' <<< "${COMPONENTS}")"
+              fi
+            done
+            if [[ "${COMPONENTS}" == "[]" ]]; then
+              echo "::error::Select a release increment for at least one component."
+              exit 1
+            fi
+            echo "result=${COMPONENTS}" >> "${GITHUB_OUTPUT}"
           else
-            echo 'result=${{ steps.filter.outputs.changes }}' >> "${GITHUB_OUTPUT}"
+            echo "result=${DETECTED_COMPONENTS}" >> "${GITHUB_OUTPUT}"
           fi
 
       # Single source of truth for the component -> Dockerfile mapping, consumed
@@ -88,10 +150,233 @@ jobs:
         run: |
           echo 'map={"delete-attachments":"src/PTL.Lambda.DeleteAttachments/Dockerfile","delete-consultant":"src/PTL.Lambda.DeleteConsultant/Dockerfile","remove-customer-data":"src/PTL.Lambda.RemoveCustomerData/Dockerfile"}' >> "${GITHUB_OUTPUT}"
 
+  release-label-validation:
+    name: Validate component release labels
+    needs: [changes]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMPONENTS_JSON: ${{ needs.changes.outputs.components }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Enforce component-specific release labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          LABELS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '[.labels[].name]')"
+          jq -e 'type == "array"' <<< "${COMPONENTS_JSON}" >/dev/null
+          jq -e 'type == "array"' <<< "${LABELS_JSON}" >/dev/null
+          mapfile -t GENERIC_LABELS < <(
+            jq -r '.[]' <<< "${LABELS_JSON}" |
+              grep -E '^release:(patch|minor|major)$' || true
+          )
+          if (( ${#GENERIC_LABELS[@]} > 0 )); then
+            echo "::error::Generic release labels are not allowed. Use release:delete-attachments:, release:delete-consultant: or release:remove-customer-data: labels."
+            exit 1
+          fi
+
+          validate_component() {
+            local component="$1"
+            local changed="false"
+            local labels=()
+            if jq -e --arg component "${component}" 'index($component) != null' <<< "${COMPONENTS_JSON}" >/dev/null; then
+              changed="true"
+            fi
+            mapfile -t labels < <(
+              jq -r '.[]' <<< "${LABELS_JSON}" |
+                grep -E "^release:${component}:(patch|minor|major)$" || true
+            )
+            if [[ "${changed}" == "true" && "${#labels[@]}" -ne 1 ]]; then
+              echo "::error::Changed ${component} requires exactly one release:${component}:patch, release:${component}:minor or release:${component}:major label."
+              return 1
+            fi
+            if [[ "${changed}" == "false" && "${#labels[@]}" -ne 0 ]]; then
+              echo "::error::${component} did not change, so remove its release label."
+              return 1
+            fi
+          }
+          validate_component delete-attachments
+          validate_component delete-consultant
+          validate_component remove-customer-data
+          echo "Component release labels match the changed paths."
+
+  release-version:
+    name: Calculate component release versions
+    needs: [changes]
+    if: >-
+      needs.changes.outputs.components != '[]' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      versions: ${{ steps.version.outputs.versions }}
+      git_tags: ${{ steps.version.outputs.git_tags }}
+      release_types: ${{ steps.version.outputs.release_types }}
+      pull_request: ${{ steps.version.outputs.pull_request }}
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Calculate independent PT-LIMS Lambda component versions
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPONENTS_JSON: ${{ needs.changes.outputs.components }}
+          MANUAL_DELETE_ATTACHMENTS_RELEASE_TYPE: ${{ inputs.delete_attachments_release_type }}
+          MANUAL_DELETE_CONSULTANT_RELEASE_TYPE: ${{ inputs.delete_consultant_release_type }}
+          MANUAL_REMOVE_CUSTOMER_DATA_RELEASE_TYPE: ${{ inputs.remove_customer_data_release_type }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          PR_NUMBER=""
+          LABELS_JSON='[]'
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            PR_NUMBER="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | sort_by(.merged_at) | last | .number // empty')"
+            if [[ -z "${PR_NUMBER}" ]]; then
+              echo "::error::Production publication must originate from a pull request merged into main."
+              exit 1
+            fi
+            LABELS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '[.labels[].name]')"
+          fi
+
+          mapfile -t GENERIC_LABELS < <(
+            jq -r '.[]' <<< "${LABELS_JSON}" |
+              grep -E '^release:(patch|minor|major)$' || true
+          )
+          if (( ${#GENERIC_LABELS[@]} > 0 )); then
+            echo "::error::Generic release labels are not supported. Use component-specific labels."
+            exit 1
+          fi
+
+          VERSIONS='{}'
+          GIT_TAGS='{}'
+          RELEASE_TYPES='{}'
+          component_changed() {
+            jq -e --arg component "$1" 'index($component) != null' <<< "${COMPONENTS_JSON}" >/dev/null
+          }
+          manual_release_type() {
+            case "$1" in
+              delete-attachments) printf '%s\n' "${MANUAL_DELETE_ATTACHMENTS_RELEASE_TYPE}" ;;
+              delete-consultant) printf '%s\n' "${MANUAL_DELETE_CONSULTANT_RELEASE_TYPE}" ;;
+              remove-customer-data) printf '%s\n' "${MANUAL_REMOVE_CUSTOMER_DATA_RELEASE_TYPE}" ;;
+              *) return 1 ;;
+            esac
+          }
+          resolve_release_type() {
+            local component="$1"
+            local changed="$2"
+            local release_type=""
+            local labels=()
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              release_type="$(manual_release_type "${component}")"
+              if [[ "${changed}" == "true" && ! "${release_type}" =~ ^(patch|minor|major)$ ]]; then
+                echo "::error::A release increment is required for changed component ${component}." >&2
+                return 1
+              fi
+              if [[ "${changed}" == "false" && "${release_type}" != "none" ]]; then
+                echo "::error::Component ${component} is not selected but has release type ${release_type}." >&2
+                return 1
+              fi
+            else
+              mapfile -t labels < <(
+                jq -r '.[]' <<< "${LABELS_JSON}" |
+                  grep -E "^release:${component}:(patch|minor|major)$" || true
+              )
+              if [[ "${changed}" == "true" && "${#labels[@]}" -ne 1 ]]; then
+                echo "::error::PR #${PR_NUMBER} must have exactly one release:${component}:* label because ${component} changed." >&2
+                return 1
+              fi
+              if [[ "${changed}" == "false" && "${#labels[@]}" -ne 0 ]]; then
+                echo "::error::PR #${PR_NUMBER} has a release label for unchanged component ${component}." >&2
+                return 1
+              fi
+              if [[ "${changed}" == "true" ]]; then
+                release_type="${labels[0]#release:${component}:}"
+              else
+                release_type="none"
+              fi
+            fi
+            printf '%s\n' "${release_type}"
+          }
+          calculate_version() {
+            local component="$1"
+            local release_type="$2"
+            local latest_tag current_version major minor patch
+            latest_tag="$(git tag --list "${component}-v*" |
+              grep -E "^${component}-v[0-9]+\.[0-9]+\.[0-9]+$" |
+              sort -V | tail -1 || true)"
+            if [[ -z "${latest_tag}" ]]; then
+              latest_tag="${component}-v0.0.0"
+            fi
+            current_version="${latest_tag#${component}-v}"
+            IFS='.' read -r major minor patch <<< "${current_version}"
+            case "${release_type}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+              *) echo "::error::Unsupported ${component} release type '${release_type}'." >&2; return 1 ;;
+            esac
+            printf '%s\n' "${major}.${minor}.${patch}"
+          }
+
+          for COMPONENT in delete-attachments delete-consultant remove-customer-data; do
+            CHANGED="false"
+            if component_changed "${COMPONENT}"; then CHANGED="true"; fi
+            RELEASE_TYPE="$(resolve_release_type "${COMPONENT}" "${CHANGED}")"
+            if [[ "${CHANGED}" == "false" ]]; then continue; fi
+            mapfile -t EXISTING_COMMIT_TAGS < <(
+              git tag --points-at "${GITHUB_SHA}" |
+                grep -E "^${COMPONENT}-v[0-9]+\.[0-9]+\.[0-9]+$" || true
+            )
+            if (( ${#EXISTING_COMMIT_TAGS[@]} > 1 )); then
+              echo "::error::Commit ${GITHUB_SHA} has multiple ${COMPONENT} release tags; refusing an ambiguous rerun."
+              exit 1
+            fi
+            if (( ${#EXISTING_COMMIT_TAGS[@]} == 1 )); then
+              NEXT_TAG="${EXISTING_COMMIT_TAGS[0]}"
+              NEXT_VERSION="${NEXT_TAG#${COMPONENT}-v}"
+              echo "Reusing ${NEXT_TAG} for an idempotent rerun."
+            else
+              NEXT_VERSION="$(calculate_version "${COMPONENT}" "${RELEASE_TYPE}")"
+              NEXT_TAG="${COMPONENT}-v${NEXT_VERSION}"
+              if git rev-parse --verify --quiet "refs/tags/${NEXT_TAG}" >/dev/null; then
+                echo "::error::Calculated Git tag ${NEXT_TAG} already exists."
+                exit 1
+              fi
+            fi
+            VERSIONS="$(jq -c --arg component "${COMPONENT}" --arg value "${NEXT_VERSION}" \
+              '. + {($component): $value}' <<< "${VERSIONS}")"
+            GIT_TAGS="$(jq -c --arg component "${COMPONENT}" --arg value "${NEXT_TAG}" \
+              '. + {($component): $value}' <<< "${GIT_TAGS}")"
+            RELEASE_TYPES="$(jq -c --arg component "${COMPONENT}" --arg value "${RELEASE_TYPE}" \
+              '. + {($component): $value}' <<< "${RELEASE_TYPES}")"
+            echo "${COMPONENT}: ${NEXT_TAG} (${RELEASE_TYPE})"
+          done
+          {
+            echo "versions=${VERSIONS}"
+            echo "git_tags=${GIT_TAGS}"
+            echo "release_types=${RELEASE_TYPES}"
+            echo "pull_request=${PR_NUMBER}"
+          } >> "${GITHUB_OUTPUT}"
+
   quality:
     name: Format, build and test solution
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -126,6 +411,8 @@ jobs:
     if: vars.SONAR_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
     steps:
       - name: Checkout full history
         uses: actions/checkout@v7.0.1
@@ -181,12 +468,10 @@ jobs:
           "${{ runner.temp }}/scanner/dotnet-sonarscanner" begin \
             /k:"${{ vars.SONAR_PROJECT_KEY }}" \
             /o:"${{ vars.SONAR_ORGANIZATION }}" \
+            /s:"${{ github.workspace }}/SonarQube.Analysis.xml" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.host.url="https://sonarcloud.io" \
-            /d:sonar.qualitygate.wait=true \
-            /d:sonar.cs.cobertura.reportsPaths="**/coverage.cobertura.xml" \
-            /d:sonar.cs.vstest.reportsPaths="**/*.trx" \
-            /d:sonar.coverage.exclusions="**/Program.cs"
+            /d:sonar.qualitygate.wait=true
           dotnet build PTL.Lambda.slnx --configuration Release --no-restore
           dotnet test PTL.Lambda.slnx \
             --configuration Release \
@@ -202,6 +487,8 @@ jobs:
     if: needs.changes.outputs.components != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -253,8 +540,8 @@ jobs:
           overwrite: true
 
   publish:
-    name: Publish ${{ matrix.component }} image
-    needs: [changes, quality, sonarcloud, container-validation]
+    name: Publish ${{ matrix.component }} production image
+    needs: [changes, quality, sonarcloud, container-validation, release-version]
     if: >-
       always() &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -263,6 +550,7 @@ jobs:
       needs.quality.result == 'success' &&
       (vars.SONAR_ENABLED != 'true' || needs.sonarcloud.result == 'success') &&
       needs.container-validation.result == 'success' &&
+      needs.release-version.result == 'success' &&
       needs.changes.outputs.components != '[]'
     runs-on: ubuntu-latest
     environment: ecr-production
@@ -284,6 +572,7 @@ jobs:
       ECR_DELETE_ATTACHMENTS_REPOSITORY: ${{ vars.ECR_DELETE_ATTACHMENTS_REPOSITORY }}
       ECR_DELETE_CONSULTANT_REPOSITORY: ${{ vars.ECR_DELETE_CONSULTANT_REPOSITORY }}
       ECR_REMOVE_CUSTOMER_DATA_REPOSITORY: ${{ vars.ECR_REMOVE_CUSTOMER_DATA_REPOSITORY }}
+      VERSIONS_JSON: ${{ needs.release-version.outputs.versions }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -328,6 +617,12 @@ jobs:
             exit 1
           }
 
+          RELEASE_VERSION="$(jq -er --arg component "${{ matrix.component }}" '.[$component]' <<< "${VERSIONS_JSON}")"
+          [[ "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::Invalid calculated release version '${RELEASE_VERSION}'."
+            exit 1
+          }
+
           EXPECTED_ROLE_PREFIX="arn:aws:iam::${EXPECTED_AWS_ACCOUNT_ID}:role/"
           [[ "${AWS_ROLE_ARN}" == "${EXPECTED_ROLE_PREFIX}"* && "${AWS_ROLE_ARN}" != "${EXPECTED_ROLE_PREFIX}" ]] || {
             echo "::error::Check AWS_ENV_ACCOUNT and AWS_ENV_OIDC_ROLE; the role ARN must reference the expected account and include a role name."
@@ -335,6 +630,7 @@ jobs:
           }
 
           echo "ecr_repository=${ECR_REPOSITORY}" >> "${GITHUB_OUTPUT}"
+          echo "release_version=${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
 
       # Reuses the exact image container-validation already built and validated for
       # this commit, instead of building it again from scratch.
@@ -407,53 +703,179 @@ jobs:
         with:
           mask-password: true
 
-      - name: Publish immutable image tag
+      - name: Publish immutable versioned image
         id: image
         shell: bash
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ steps.component.outputs.ecr_repository }}
+          RELEASE_VERSION: ${{ steps.component.outputs.release_version }}
         run: |
           set -euo pipefail
-          IMAGE_TAG="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          IMAGE_URI="${ECR_REGISTRY}/${{ steps.component.outputs.ecr_repository }}:${IMAGE_TAG}"
-
-          docker tag "ptl-lambda-${{ matrix.component }}:${GITHUB_SHA}" "${IMAGE_URI}"
-          docker push "${IMAGE_URI}"
-
+          LOCAL_IMAGE="ptl-lambda-${{ matrix.component }}:${GITHUB_SHA}"
+          CANDIDATE_TAG="sha-${GITHUB_SHA::12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CANDIDATE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${CANDIDATE_TAG}"
+          docker tag "${LOCAL_IMAGE}" "${CANDIDATE_URI}"
+          docker push "${CANDIDATE_URI}"
           IMAGE_DIGEST="$(aws ecr describe-images \
-            --repository-name "${{ steps.component.outputs.ecr_repository }}" \
-            --image-ids imageTag="${IMAGE_TAG}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)"
-
+            --registry-id "${EXPECTED_AWS_ACCOUNT_ID}" \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${CANDIDATE_TAG}" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          [[ "${IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::ECR returned an invalid candidate digest '${IMAGE_DIGEST}'."
+            exit 1
+          }
+          DIGEST_HEX="${IMAGE_DIGEST#sha256:}"
+          DIGEST_SUFFIX="${DIGEST_HEX: -8}"
+          RELEASE_TAG="v${RELEASE_VERSION}-${DIGEST_SUFFIX}"
+          RELEASE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_TAG}"
+          EXISTING_DIGEST="$(aws ecr describe-images \
+            --registry-id "${EXPECTED_AWS_ACCOUNT_ID}" \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${RELEASE_TAG}" \
+            --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)"
+          if [[ -n "${EXISTING_DIGEST}" && "${EXISTING_DIGEST}" != "None" ]]; then
+            if [[ "${EXISTING_DIGEST}" != "${IMAGE_DIGEST}" ]]; then
+              echo "::error::Immutable tag ${RELEASE_TAG} already points to another digest."
+              exit 1
+            fi
+            echo "${RELEASE_TAG} already points to the validated digest."
+          else
+            # Push the same validated local image with the release tag. This avoids
+            # manifest serialization changes introduced by an ECR put-image retag.
+            docker tag "${LOCAL_IMAGE}" "${RELEASE_URI}"
+            docker push "${RELEASE_URI}"
+          fi
+          RELEASE_DIGEST="$(aws ecr describe-images \
+            --registry-id "${EXPECTED_AWS_ACCOUNT_ID}" \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${RELEASE_TAG}" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          if [[ "${RELEASE_DIGEST}" != "${IMAGE_DIGEST}" ]]; then
+            echo "::error::Release tag digest does not match the validated candidate digest."
+            exit 1
+          fi
           {
-            echo "image_uri=${IMAGE_URI}"
+            echo "image_tag=${RELEASE_TAG}"
+            echo "image_uri=${RELEASE_URI}"
             echo "image_digest=${IMAGE_DIGEST}"
+            echo "candidate_tag=${CANDIDATE_TAG}"
+            echo "digest_suffix=${DIGEST_SUFFIX}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Write publishing summary
         shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.image_tag }}
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.image_digest }}
+          CANDIDATE_TAG: ${{ steps.image.outputs.candidate_tag }}
+          RELEASE_VERSION: ${{ steps.component.outputs.release_version }}
         run: |
           {
-            echo "### PT-LIMS ${{ matrix.component }} Lambda image published"
+            echo "### PT-LIMS ${{ matrix.component }} Lambda production image"
             echo
-            echo "- Image: \`${{ steps.image.outputs.image_uri }}\`"
-            echo "- Digest: \`${{ steps.image.outputs.image_digest }}\`"
-            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Release version: v${RELEASE_VERSION}"
+            echo "- ECR release tag: ${IMAGE_TAG}"
+            echo "- Image URI: ${IMAGE_URI}"
+            echo "- Immutable digest: ${IMAGE_DIGEST}"
+            echo "- Candidate tag: ${CANDIDATE_TAG}"
+            echo "- Commit: ${GITHUB_SHA}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  finalise-release:
+    name: Create immutable component Git tags
+    needs: [changes, release-version, publish]
+    if: >-
+      always() &&
+      needs.publish.result == 'success' &&
+      needs.release-version.result == 'success' &&
+      needs.changes.outputs.components != '[]' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Create annotated component release tags
+        id: tags
+        shell: bash
+        env:
+          COMPONENTS_JSON: ${{ needs.changes.outputs.components }}
+          GIT_TAGS_JSON: ${{ needs.release-version.outputs.git_tags }}
+          RELEASE_TYPES_JSON: ${{ needs.release-version.outputs.release_types }}
+          PR_NUMBER: ${{ needs.release-version.outputs.pull_request }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          TAG_REFS_TO_PUSH=()
+          CREATED_TAGS='[]'
+          while IFS= read -r COMPONENT; do
+            RELEASE_TAG="$(jq -er --arg component "${COMPONENT}" '.[$component]' <<< "${GIT_TAGS_JSON}")"
+            RELEASE_TYPE="$(jq -er --arg component "${COMPONENT}" '.[$component]' <<< "${RELEASE_TYPES_JSON}")"
+            EXISTING_COMMIT="$(git rev-list -n 1 "${RELEASE_TAG}" 2>/dev/null || true)"
+            if [[ -n "${EXISTING_COMMIT}" ]]; then
+              if [[ "${EXISTING_COMMIT}" != "${GITHUB_SHA}" ]]; then
+                echo "::error::${RELEASE_TAG} already points to ${EXISTING_COMMIT}."
+                exit 1
+              fi
+              echo "${RELEASE_TAG} already points to this release commit."
+            else
+              MESSAGE="PT-LIMS Lambda ${COMPONENT} production release ${RELEASE_TAG}; increment=${RELEASE_TYPE}"
+              if [[ -n "${PR_NUMBER}" ]]; then MESSAGE="${MESSAGE}; PR #${PR_NUMBER}"; fi
+              git tag -a "${RELEASE_TAG}" "${GITHUB_SHA}" -m "${MESSAGE}"
+              TAG_REFS_TO_PUSH+=("refs/tags/${RELEASE_TAG}")
+            fi
+            CREATED_TAGS="$(jq -c --arg tag "${RELEASE_TAG}" '. + [$tag]' <<< "${CREATED_TAGS}")"
+          done < <(jq -r '.[]' <<< "${COMPONENTS_JSON}")
+          if (( ${#TAG_REFS_TO_PUSH[@]} > 0 )); then
+            git push --atomic origin "${TAG_REFS_TO_PUSH[@]}"
+          fi
+          echo "created_tags=${CREATED_TAGS}" >> "${GITHUB_OUTPUT}"
+      - name: Write release summary
+        shell: bash
+        env:
+          COMPONENTS_JSON: ${{ needs.changes.outputs.components }}
+          GIT_TAGS_JSON: ${{ needs.release-version.outputs.git_tags }}
+          RELEASE_TYPES_JSON: ${{ needs.release-version.outputs.release_types }}
+        run: |
+          {
+            echo "### PT-LIMS Lambda production releases finalised"
+            echo
+            echo "| Component | Git tag | Increment |"
+            echo "|---|---|---|"
+            while IFS= read -r COMPONENT; do
+              RELEASE_TAG="$(jq -er --arg component "${COMPONENT}" '.[$component]' <<< "${GIT_TAGS_JSON}")"
+              RELEASE_TYPE="$(jq -er --arg component "${COMPONENT}" '.[$component]' <<< "${RELEASE_TYPES_JSON}")"
+              echo "| ${COMPONENT} | ${RELEASE_TAG} | ${RELEASE_TYPE} |"
+            done < <(jq -r '.[]' <<< "${COMPONENTS_JSON}")
+            echo
+            echo "- Commit: ${GITHUB_SHA}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   gate:
-    name: CI gate
-    needs: [changes, quality, sonarcloud, container-validation, publish]
+    name: CI and publication gate
+    needs: [changes, quality, sonarcloud, container-validation, release-version, publish, finalise-release]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     env:
       CHANGES_RESULT: ${{ needs.changes.result }}
       QUALITY_RESULT: ${{ needs.quality.result }}
       SONAR_RESULT: ${{ needs.sonarcloud.result }}
       CONTAINER_RESULT: ${{ needs.container-validation.result }}
+      RELEASE_VERSION_RESULT: ${{ needs.release-version.result }}
       PUBLISH_RESULT: ${{ needs.publish.result }}
+      FINALISE_RESULT: ${{ needs.finalise-release.result }}
       COMPONENTS: ${{ needs.changes.outputs.components }}
       SONAR_ENABLED: ${{ vars.SONAR_ENABLED }}
       EVENT_NAME: ${{ github.event_name }}
@@ -483,9 +905,19 @@ jobs:
             exit 1
           fi
 
-          if [[ "${EVENT_NAME}" =~ ^(push|workflow_dispatch)$ && "${COMPONENTS}" != "[]" && "${PUBLISH_RESULT}" != "success" ]]; then
-            echo "::error::Image publishing result: ${PUBLISH_RESULT}"
-            exit 1
+          if [[ "${EVENT_NAME}" =~ ^(push|workflow_dispatch)$ && "${COMPONENTS}" != "[]" ]]; then
+            if [[ "${RELEASE_VERSION_RESULT}" != "success" ]]; then
+              echo "::error::Release version calculation result: ${RELEASE_VERSION_RESULT}"
+              exit 1
+            fi
+            if [[ "${PUBLISH_RESULT}" != "success" ]]; then
+              echo "::error::Image publishing result: ${PUBLISH_RESULT}"
+              exit 1
+            fi
+            if [[ "${FINALISE_RESULT}" != "success" ]]; then
+              echo "::error::Release tag finalisation result: ${FINALISE_RESULT}"
+              exit 1
+            fi
           fi
 
           echo "All required CI checks passed."

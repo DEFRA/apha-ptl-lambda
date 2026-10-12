@@ -12,6 +12,7 @@
     <Project Path="src/PTL.Lambda.RemoveCustomerData/PTL.Lambda.RemoveCustomerData.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PTL.Lambda.TestKit/PTL.Lambda.TestKit.csproj" />
     <Project Path="tests/PTL.Lambda.Shared.Tests/PTL.Lambda.Shared.Tests.csproj" />
     <Project Path="tests/PTL.Lambda.DeleteAttachments.Tests/PTL.Lambda.DeleteAttachments.Tests.csproj" />
     <Project Path="tests/PTL.Lambda.DeleteConsultant.Tests/PTL.Lambda.DeleteConsultant.Tests.csproj" />

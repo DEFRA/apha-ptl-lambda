@@ -5,15 +5,19 @@ processing, deployed as containerised images triggered by Amazon EventBridge.
 
 ## Functions
 
-| Function | Description |
-|---|---|
-| `PTL.Lambda.DeleteAttachments` | Deletes expired internal/published result attachments |
-| `PTL.Lambda.DeleteConsultant` | Removes consultant records that are no longer required |
-| `PTL.Lambda.RemoveCustomerData` | GDPR-compliant scheduled customer data cleanup |
-| `PTL.Lambda.Shared` | Shared DB connection factory, startup config checks, Lambda config bootstrap |
+| Function | Description | Status |
+|---|---|---|
+| `PTL.Lambda.DeleteAttachments` | Deletes expired internal/published result attachments | Migrated |
+| `PTL.Lambda.DeleteConsultant` | Removes consultant records that are no longer required | Migrated |
+| `PTL.Lambda.RemoveCustomerData` | GDPR-compliant scheduled customer data cleanup (anonymization, not deletion) | Migrated |
+| `PTL.Lambda.Shared` | Shared DB connection factory, startup config checks, Lambda config bootstrap, and the generic `BatchCleanupEngine` all cleanup functions run on | - |
 
-**Current status: scaffolding.** Each handler is a stub that validates its required database
-configuration and returns a sample result describing what it would do.
+Each migrated function wires a `BatchCleanupEngine<TRecord>` (paging, dry-run reporting, transaction
+commit/rollback, an elapsed-time deferral guard, and audit logging) together with its own
+`IBatchCleanupRepository<TRecord>` implementation (the stored-procedure calls ported verbatim from
+the legacy Windows Service). `PTL.Lambda.RemoveCustomerData` runs two passes - Customers then
+Participants - via two configured instances of the same repository, 300ms apart, matching the
+legacy service's deliberate pause.
 
 ## Prerequisites
 
@@ -124,15 +128,32 @@ fields @timestamp, AwsRequestId, DeletedCount, @message
 
 [`.github/workflows/build-test-publish-images.yml`](.github/workflows/build-test-publish-images.yml):
 
-1. **`changes`** - detects which function(s) changed (a change under `PTL.Lambda.Shared` affects all).
-2. **`quality`** - restores, format-checks, builds and tests the whole solution.
-3. **`sonarcloud`** *(optional, gated on the `SONAR_ENABLED` repo variable)*.
-4. **`container-validation`** - builds only the affected functions' Docker images.
-5. **`publish`** *(push to `main` / manual dispatch only)* - pushes the validated image to that
-   function's own ECR repository as `sha-<12-char-sha>-<run-id>-<run-attempt>`.
-6. **`gate`** - a single required status check that fails if any of the above didn't succeed.
+1. **`changes`** - detects which function(s) changed (a change under `PTL.Lambda.Shared` or
+   `PTL.Lambda.TestKit` affects all).
+2. **`release-label-validation`** *(pull requests only)* - enforces exactly one
+   `release:<component>:patch|minor|major` label per changed component.
+3. **`release-version`** *(push to `main` / manual dispatch only)* - calculates each changed
+   component's next independent semantic version from its `<component>-v*` git tags.
+4. **`quality`** - restores, format-checks, builds and tests the whole solution.
+5. **`sonarcloud`** *(optional, gated on the `SONAR_ENABLED` repo variable)*.
+6. **`container-validation`** - builds only the affected functions' Docker images.
+7. **`publish`** *(push to `main` / manual dispatch only)* - pushes a candidate
+   `sha-<12-char-sha>-<run-id>-<run-attempt>` tag, then promotes it to an immutable
+   `v<version>-<digest-suffix>` release tag in that function's own ECR repository once the digest is
+   verified.
+8. **`finalise-release`** *(push to `main` / manual dispatch only)* - creates an annotated
+   `<component>-v<major>.<minor>.<patch>` Git tag for each released component.
+9. **`gate`** - a single required status check that fails if any of the above didn't succeed.
 
-Only functions whose code changed are built and published on a given run.
+Only functions whose code changed are built and published on a given run. Component versions are
+independent of each other (e.g. `delete-attachments-v1.2.0` and `delete-consultant-v1.0.3` can exist
+side by side), matching the versioning model used by `apha-ptl-apps`. Production releases on `main`
+are serialized (a `queue`-mode concurrency group) so two merges can never calculate the same next
+version; pull request checks are not affected and run independently per PR/run.
+
+A manual `workflow_dispatch` run can release any combination of components directly from `main` by
+choosing a `patch`/`minor`/`major` increment per component (`none` to skip it) - the same mechanism
+pull-request release labels use.
 
 ### Required GitHub configuration
 
@@ -151,6 +172,9 @@ Each function publishes into **its own ECR repository**:
 | `AWS_ENV_ACCOUNT` | environment secret (`ecr-production`) | 12-digit AWS account ID |
 | `AWS_ENV_OIDC_ROLE` | environment secret (`ecr-production`) | OIDC deployment role name |
 | `SONAR_TOKEN` | repo secret | - |
+
+`release-version`/`finalise-release` need no extra configuration beyond the workflow's default
+`GITHUB_TOKEN` (`contents: write` for pushing tags, `pull-requests: read` for reading PR labels).
 
 This repo only builds and publishes images to ECR - it does not deploy them to a Lambda function or
 provision infrastructure (EventBridge rules, IAM roles, etc.); that is handled separately.

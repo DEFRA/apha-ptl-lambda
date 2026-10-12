@@ -4,7 +4,7 @@ using Amazon.Lambda.Serialization.SystemTextJson;
 using PTL.Lambda.DeleteConsultant;
 using PTL.Lambda.Shared;
 
-Func<object, ILambdaContext, Task<CleanupResult>> handler = DeleteConsultantFunction.FunctionHandler;
+Func<CleanupInvocationRequest?, ILambdaContext, Task<CleanupResult>> handler = DeleteConsultantFunction.FunctionHandler;
 
 using var bootstrap = LambdaBootstrapBuilder.Create(handler, new DefaultLambdaJsonSerializer()).Build();
 await bootstrap.RunAsync();

@@ -5,35 +5,36 @@ using PTL.Lambda.Shared;
 namespace PTL.Lambda.DeleteAttachments;
 
 /// <summary>
-/// Scaffold handler for the DeleteAttachments cleanup Lambda. Business logic is not yet
-/// migrated - see DeleteAttachmentsService.ProcessRecords in
-/// proficiency-testing-2026-08-17/ProficiencyTestingDeleteAttachmentsService for the source to port.
+/// Deletes expired internal/published result attachments, ported from
+/// DeleteAttachmentsService.ProcessRecords (proficiency-testing-2026-08-17).
 /// </summary>
 public static class DeleteAttachmentsFunction
 {
-    // Excluded from coverage: pure delegation to the tested overload below with a real
-    // SqlConnectionFactory, which would require an actual DB connection to exercise (see
-    // README's Program.cs exclusion rationale for the same class of non-testable wiring).
+    private const string CleanupName = "DeleteAttachments";
+
+    // Excluded from coverage: pure delegation to the tested overload below with real collaborators,
+    // which would require an actual DB connection to exercise (see README's Program.cs exclusion
+    // rationale for the same class of non-testable wiring).
     [ExcludeFromCodeCoverage]
-    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
-        FunctionHandler(input, context, new SqlConnectionFactory(LambdaConfiguration.Build()));
+    public static Task<CleanupResult> FunctionHandler(CleanupInvocationRequest? input, ILambdaContext context) =>
+        FunctionHandler(
+            input,
+            context,
+            new SqlConnectionFactory(LambdaConfiguration.Build()),
+            new SqlAttachmentCleanupRepository(),
+            new SqlAuditLogger());
 
-    // Internal overload lets tests inject a fake IDbConnectionFactory instead of opening a real
-    // SQL Server socket (see PTL.Lambda.DeleteAttachments.Tests, InternalsVisibleTo below).
+    // Internal overload lets tests inject fakes for every collaborator that would otherwise need a
+    // real SQL Server socket (see PTL.Lambda.DeleteAttachments.Tests, InternalsVisibleTo below).
     internal static Task<CleanupResult> FunctionHandler(
-        object input, ILambdaContext context, IDbConnectionFactory connectionFactory) =>
+        CleanupInvocationRequest? input,
+        ILambdaContext context,
+        IDbConnectionFactory connectionFactory,
+        IBatchCleanupRepository<AttachmentToDelete> repository,
+        IAuditLogger auditLogger) =>
         LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, () =>
-        {
-            var configuration = LambdaConfiguration.Build();
-            var options = StartupChecks.RequireDatabaseOptions(configuration);
-
-            DatabaseConnectivity.VerifyConnection(connectionFactory, options);
-
-            return Task.FromResult(new CleanupResult(
-                Service: "DeleteAttachments",
-                Status: "Stub",
-                Message: $"DeleteAttachments Lambda verified its database connection to '{options.Name}' on '{options.Host}', " +
-                         "but the cleanup business logic has not been migrated yet. Replace this stub in Function.cs.",
-                InvokedAtUtc: DateTime.UtcNow));
-        });
+            CleanupFunctionRunner.RunAsync(
+                CleanupName, "attachment", "deleted", connectionFactory, repository, auditLogger,
+                input ?? new CleanupInvocationRequest()));
 }
+

@@ -5,35 +5,36 @@ using PTL.Lambda.Shared;
 namespace PTL.Lambda.DeleteConsultant;
 
 /// <summary>
-/// Scaffold handler for the DeleteConsultant cleanup Lambda. Business logic is not yet
-/// migrated - see DeleteConsultantService.ProcessRecords in
-/// proficiency-testing-2026-08-17/ProficiencyTestingDeleteConsultantService for the source to port.
+/// Removes inactive internal/external test consultant accounts, ported from
+/// DeleteConsultantService.ProcessRecords (proficiency-testing-2026-08-17).
 /// </summary>
 public static class DeleteConsultantFunction
 {
-    // Excluded from coverage: pure delegation to the tested overload below with a real
-    // SqlConnectionFactory, which would require an actual DB connection to exercise (see
-    // README's Program.cs exclusion rationale for the same class of non-testable wiring).
+    private const string CleanupName = "DeleteConsultant";
+
+    // Excluded from coverage: pure delegation to the tested overload below with real collaborators,
+    // which would require an actual DB connection to exercise (see README's Program.cs exclusion
+    // rationale for the same class of non-testable wiring).
     [ExcludeFromCodeCoverage]
-    public static Task<CleanupResult> FunctionHandler(object input, ILambdaContext context) =>
-        FunctionHandler(input, context, new SqlConnectionFactory(LambdaConfiguration.Build()));
+    public static Task<CleanupResult> FunctionHandler(CleanupInvocationRequest? input, ILambdaContext context) =>
+        FunctionHandler(
+            input,
+            context,
+            new SqlConnectionFactory(LambdaConfiguration.Build()),
+            new SqlConsultantCleanupRepository(),
+            new SqlAuditLogger());
 
-    // Internal overload lets tests inject a fake IDbConnectionFactory instead of opening a real
-    // SQL Server socket (see PTL.Lambda.DeleteConsultant.Tests, InternalsVisibleTo below).
+    // Internal overload lets tests inject fakes for every collaborator that would otherwise need a
+    // real SQL Server socket (see PTL.Lambda.DeleteConsultant.Tests, InternalsVisibleTo below).
     internal static Task<CleanupResult> FunctionHandler(
-        object input, ILambdaContext context, IDbConnectionFactory connectionFactory) =>
+        CleanupInvocationRequest? input,
+        ILambdaContext context,
+        IDbConnectionFactory connectionFactory,
+        IBatchCleanupRepository<ConsultantToDelete> repository,
+        IAuditLogger auditLogger) =>
         LambdaLogging.InvokeAsync(nameof(DeleteConsultantFunction), context, () =>
-        {
-            var configuration = LambdaConfiguration.Build();
-            var options = StartupChecks.RequireDatabaseOptions(configuration);
-
-            DatabaseConnectivity.VerifyConnection(connectionFactory, options);
-
-            return Task.FromResult(new CleanupResult(
-                Service: "DeleteConsultant",
-                Status: "Stub",
-                Message: $"DeleteConsultant Lambda verified its database connection to '{options.Name}' on '{options.Host}', " +
-                         "but the cleanup business logic has not been migrated yet. Replace this stub in Function.cs.",
-                InvokedAtUtc: DateTime.UtcNow));
-        });
+            CleanupFunctionRunner.RunAsync(
+                CleanupName, "consultant", "deleted", connectionFactory, repository, auditLogger,
+                input ?? new CleanupInvocationRequest()));
 }
+
