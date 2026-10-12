@@ -48,13 +48,15 @@ public static class RemoveCustomerDataFunction
             using var connection = connectionFactory.CreateConnection();
             connection.Open();
 
-            var customerEngine = new BatchCleanupEngine<RecordToUpdate>($"{CleanupName}-Customers", customerRepository, auditLogger);
+            var customerEngine = new BatchCleanupEngine<RecordToUpdate>(
+                $"{CleanupName}-Customers", LegacyServiceType.RemoveCustomerDataService, customerRepository, auditLogger);
             var customerResult = await customerEngine.RunAsync(connection, request.BatchSize, request.DryRun, request.TestDate)
                 .ConfigureAwait(false);
 
             await Task.Delay(PassDelay).ConfigureAwait(false);
 
-            var participantEngine = new BatchCleanupEngine<RecordToUpdate>($"{CleanupName}-Participants", participantRepository, auditLogger);
+            var participantEngine = new BatchCleanupEngine<RecordToUpdate>(
+                $"{CleanupName}-Participants", LegacyServiceType.RemoveCustomerDataService, participantRepository, auditLogger);
             var participantResult = await participantEngine.RunAsync(connection, request.BatchSize, request.DryRun, request.TestDate)
                 .ConfigureAwait(false);
 
