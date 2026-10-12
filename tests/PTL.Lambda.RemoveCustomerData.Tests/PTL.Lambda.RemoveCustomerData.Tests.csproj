@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PTL.Lambda.RemoveCustomerData\PTL.Lambda.RemoveCustomerData.csproj" />
+    <ProjectReference Include="..\PTL.Lambda.TestKit\PTL.Lambda.TestKit.csproj" />
   </ItemGroup>
 
 </Project>
