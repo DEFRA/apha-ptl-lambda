@@ -25,7 +25,7 @@ public class CleanupFunctionRunnerTests
         var auditLogger = new FakeAuditLogger();
 
         var result = await CleanupFunctionRunner.RunAsync(
-            "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, auditLogger,
+            new CleanupDescriptor("TestCleanup", ServiceType, "widget", "deleted"), connectionFactory, repository, auditLogger,
             new CleanupInvocationRequest());
 
         Assert.Equal("TestCleanup", result.Service);
@@ -44,7 +44,7 @@ public class CleanupFunctionRunnerTests
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]);
 
         var result = await CleanupFunctionRunner.RunAsync(
-            "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+            new CleanupDescriptor("TestCleanup", ServiceType, "widget", "deleted"), connectionFactory, repository, new FakeAuditLogger(),
             new CleanupInvocationRequest(DryRun: true));
 
         Assert.Equal("[DRY RUN] identified 1 widget(s) in 0.0s.", result.Message);
@@ -59,7 +59,7 @@ public class CleanupFunctionRunnerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => CleanupFunctionRunner.RunAsync(
-                "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+                new CleanupDescriptor("TestCleanup", ServiceType, "widget", "deleted"), connectionFactory, repository, new FakeAuditLogger(),
                 new CleanupInvocationRequest()));
     }
 
@@ -72,7 +72,7 @@ public class CleanupFunctionRunnerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => CleanupFunctionRunner.RunAsync(
-                "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+                new CleanupDescriptor("TestCleanup", ServiceType, "widget", "deleted"), connectionFactory, repository, new FakeAuditLogger(),
                 new CleanupInvocationRequest()));
 
         Assert.True(connectionFactory.LastConnection!.Transactions[0].RolledBack);

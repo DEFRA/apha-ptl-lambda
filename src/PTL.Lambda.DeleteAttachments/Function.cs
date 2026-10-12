@@ -34,7 +34,7 @@ public static class DeleteAttachmentsFunction
         IAuditLogger auditLogger) =>
         LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, () =>
             CleanupFunctionRunner.RunAsync(
-                CleanupName, LegacyServiceType.DeleteAttachmentsService, "attachment", "deleted",
+                new CleanupDescriptor(CleanupName, LegacyServiceType.DeleteAttachmentsService, "attachment", "deleted"),
                 connectionFactory, repository, auditLogger, input ?? new CleanupInvocationRequest()));
 }
 

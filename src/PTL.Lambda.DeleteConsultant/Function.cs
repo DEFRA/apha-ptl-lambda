@@ -34,7 +34,7 @@ public static class DeleteConsultantFunction
         IAuditLogger auditLogger) =>
         LambdaLogging.InvokeAsync(nameof(DeleteConsultantFunction), context, () =>
             CleanupFunctionRunner.RunAsync(
-                CleanupName, LegacyServiceType.DeleteConsultantService, "consultant", "deleted",
+                new CleanupDescriptor(CleanupName, LegacyServiceType.DeleteConsultantService, "consultant", "deleted"),
                 connectionFactory, repository, auditLogger, input ?? new CleanupInvocationRequest()));
 }
 
