@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SonarQubeAnalysisProperties xmlns="http://www.sonarsource.com/msbuild/integration/2015/1">
+
+  <!-- Build output and CI config - excluded from main-code analysis. -->
+  <Property Name="sonar.exclusions">**/bin/**,**/obj/**,**/*.yml,**/*.yaml</Property>
+
+  <!-- The SonarScanner for .NET auto-detects test projects (including PTL.Lambda.TestKit, which has
+       no tests of its own but is test-only support code) and analyses them as a separate "Test"
+       source set (sonar.tests) that sonar.exclusions above does not apply to - excluded here to drop
+       code-smell/bug analysis on test helpers/fakes/assertions entirely. -->
+  <Property Name="sonar.test.exclusions">tests/**</Property>
+
+  <!-- coverlet excludes Program.cs (the RuntimeSupport bootstrap, never exercised by a static-handler
+       unit test) from instrumentation everywhere (see tests/Directory.Build.props ExcludeByFile) -
+       without this matching exclusion, Sonar still counts its lines as "to cover" but finds no
+       coverage data, dragging the reported percentage down instead of marking it N/A. The real
+       Dapper-calling methods in each Sql*Repository/SqlAuditLogger class are individually marked
+       [ExcludeFromCodeCoverage] in source instead of listed here, since only specific methods -
+       not whole files - need excluding there. -->
+  <Property Name="sonar.coverage.exclusions">**/Program.cs</Property>
+
+  <!-- Report locations produced by `dotnet test` in the CI pipeline -->
+  <Property Name="sonar.cs.vstest.reportsPaths">**/*.trx</Property>
+  <Property Name="sonar.cs.cobertura.reportsPaths">**/coverage.cobertura.xml</Property>
+
+</SonarQubeAnalysisProperties>
