@@ -32,37 +32,9 @@ public static class DeleteAttachmentsFunction
         IDbConnectionFactory connectionFactory,
         IBatchCleanupRepository<AttachmentToDelete> repository,
         IAuditLogger auditLogger) =>
-        LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, async () =>
-        {
-            var request = input ?? new CleanupInvocationRequest();
-            var configuration = LambdaConfiguration.Build();
-            var options = StartupChecks.RequireDatabaseOptions(configuration);
-
-            DatabaseConnectivity.VerifyConnection(connectionFactory, options);
-
-            using var connection = connectionFactory.CreateConnection();
-            connection.Open();
-
-            var engine = new BatchCleanupEngine<AttachmentToDelete>(CleanupName, repository, auditLogger);
-            var result = await engine.RunAsync(connection, request.BatchSize, request.DryRun, request.TestDate)
-                .ConfigureAwait(false);
-
-            return new CleanupResult(
-                CleanupName,
-                result.DeferredRemainingWork ? "PartiallyCompleted" : "Completed",
-                BuildMessage(request, result),
-                DateTime.UtcNow);
-        });
-
-    private static string BuildMessage(CleanupInvocationRequest request, CleanupRunResult result)
-    {
-        var action = request.DryRun ? "identified" : "deleted";
-        var deferredNote = result.DeferredRemainingWork
-            ? " Stopped early - the remainder is deferred to the next scheduled invocation."
-            : string.Empty;
-
-        return $"{(request.DryRun ? "[DRY RUN] " : string.Empty)}{action} {result.TotalProcessed} attachment(s) " +
-               $"in {result.Duration.TotalSeconds:N1}s.{deferredNote}";
-    }
+        LambdaLogging.InvokeAsync(nameof(DeleteAttachmentsFunction), context, () =>
+            CleanupFunctionRunner.RunAsync(
+                CleanupName, "attachment", "deleted", connectionFactory, repository, auditLogger,
+                input ?? new CleanupInvocationRequest()));
 }
 
