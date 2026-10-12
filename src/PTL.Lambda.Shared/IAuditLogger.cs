@@ -7,7 +7,7 @@ public interface IAuditLogger
 {
     Task LogAsync(
         IDbConnection connection,
-        string serviceName,
+        LegacyServiceType serviceType,
         string message,
         AuditLogLevel level,
         CancellationToken cancellationToken = default);

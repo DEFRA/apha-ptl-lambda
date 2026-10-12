@@ -10,9 +10,7 @@ namespace PTL.Lambda.Shared;
 public static class CleanupFunctionRunner
 {
     public static async Task<CleanupResult> RunAsync<TRecord>(
-        string cleanupName,
-        string resultNoun,
-        string actionVerb,
+        CleanupDescriptor descriptor,
         IDbConnectionFactory connectionFactory,
         IBatchCleanupRepository<TRecord> repository,
         IAuditLogger auditLogger,
@@ -27,14 +25,14 @@ public static class CleanupFunctionRunner
         using var connection = connectionFactory.CreateConnection();
         connection.Open();
 
-        var engine = new BatchCleanupEngine<TRecord>(cleanupName, repository, auditLogger);
+        var engine = new BatchCleanupEngine<TRecord>(descriptor.CleanupName, descriptor.ServiceType, repository, auditLogger);
         var result = await engine.RunAsync(connection, request.BatchSize, request.DryRun, request.TestDate)
             .ConfigureAwait(false);
 
         return new CleanupResult(
-            cleanupName,
+            descriptor.CleanupName,
             result.DeferredRemainingWork ? "PartiallyCompleted" : "Completed",
-            BuildMessage(request, result, resultNoun, actionVerb),
+            BuildMessage(request, result, descriptor.ResultNoun, descriptor.ActionVerb),
             DateTime.UtcNow);
     }
 

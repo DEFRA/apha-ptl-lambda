@@ -5,13 +5,14 @@ namespace PTL.Lambda.Shared.Tests;
 public class BatchCleanupEngineTests
 {
     private static readonly DateTime ReferenceDate = new(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc);
+    private const LegacyServiceType ServiceType = LegacyServiceType.DeleteAttachmentsService;
 
     [Fact]
     public async Task RunAsync_ReturnsEmptyResult_WhenNoRecordsFound()
     {
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([]);
         var auditLogger = new FakeAuditLogger();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, auditLogger);
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, auditLogger);
 
         var result = await engine.RunAsync(new FakeDbConnection(), batchSize: 1000, dryRun: false, testDate: ReferenceDate);
 
@@ -20,6 +21,7 @@ public class BatchCleanupEngineTests
         Assert.False(result.DeferredRemainingWork);
         Assert.Contains(auditLogger.Entries, e => e.Message.Contains("Starting", StringComparison.Ordinal));
         Assert.Contains(auditLogger.Entries, e => e.Message.Contains("Total records cleaned: 0", StringComparison.Ordinal));
+        Assert.All(auditLogger.Entries, e => Assert.Equal(ServiceType, e.ServiceType));
     }
 
     [Fact]
@@ -33,7 +35,7 @@ public class BatchCleanupEngineTests
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]);
         var auditLogger = new FakeAuditLogger();
         var connection = new FakeDbConnection();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, auditLogger);
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, auditLogger);
 
         var result = await engine.RunAsync(connection, batchSize: 1000, dryRun: false, testDate: ReferenceDate);
 
@@ -53,7 +55,7 @@ public class BatchCleanupEngineTests
         var firstBatch = new List<FakeCleanupRecord> { new(firstId, ReferenceDate.AddYears(-8), "Internal") };
         var secondBatch = new List<FakeCleanupRecord> { new(Guid.NewGuid(), ReferenceDate.AddYears(-8), "Internal") };
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([firstBatch, secondBatch]);
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, new FakeAuditLogger());
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, new FakeAuditLogger());
 
         var result = await engine.RunAsync(new FakeDbConnection(), batchSize: 1000, dryRun: false, testDate: ReferenceDate);
 
@@ -72,7 +74,7 @@ public class BatchCleanupEngineTests
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]);
         var auditLogger = new FakeAuditLogger();
         var connection = new FakeDbConnection();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, auditLogger);
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, auditLogger);
 
         var result = await engine.RunAsync(connection, batchSize: 1000, dryRun: true, testDate: ReferenceDate);
 
@@ -90,7 +92,7 @@ public class BatchCleanupEngineTests
         var batch = new List<FakeCleanupRecord> { new(Guid.NewGuid(), ReferenceDate.AddYears(-8), "Internal") };
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]) { ThrowOnApply = true };
         var connection = new FakeDbConnection();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, new FakeAuditLogger());
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, new FakeAuditLogger());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => engine.RunAsync(connection, batchSize: 1000, dryRun: false, testDate: ReferenceDate));
@@ -107,7 +109,7 @@ public class BatchCleanupEngineTests
         var batch = new List<FakeCleanupRecord> { new(Guid.NewGuid(), ReferenceDate.AddYears(-8), "Internal") };
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]) { ThrowOnApply = true };
         var connection = new FakeDbConnection(throwOnRollback: true);
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, new FakeAuditLogger());
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, new FakeAuditLogger());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => engine.RunAsync(connection, batchSize: 1000, dryRun: false, testDate: ReferenceDate));
@@ -120,7 +122,7 @@ public class BatchCleanupEngineTests
     {
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([[new FakeCleanupRecord(Guid.NewGuid(), ReferenceDate, "Internal")]]);
         var auditLogger = new FakeAuditLogger();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, auditLogger, timeBudget: TimeSpan.Zero);
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, auditLogger, timeBudget: TimeSpan.Zero);
 
         var result = await engine.RunAsync(new FakeDbConnection(), batchSize: 1000, dryRun: false, testDate: ReferenceDate);
 
@@ -134,7 +136,7 @@ public class BatchCleanupEngineTests
     {
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([[new FakeCleanupRecord(Guid.NewGuid(), ReferenceDate, "Internal")]]);
         var auditLogger = new FakeAuditLogger();
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, auditLogger);
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, auditLogger);
 
         var result = await engine.RunAsync(
             new FakeDbConnection(), batchSize: 1000, dryRun: false, testDate: DateTime.UtcNow.AddDays(1));
@@ -148,7 +150,7 @@ public class BatchCleanupEngineTests
     public async Task RunAsync_RunsNormally_WhenTestDateIsFutureButDryRun()
     {
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([[new FakeCleanupRecord(Guid.NewGuid(), ReferenceDate, "Internal")]]);
-        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", repository, new FakeAuditLogger());
+        var engine = new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, repository, new FakeAuditLogger());
 
         var result = await engine.RunAsync(
             new FakeDbConnection(), batchSize: 1000, dryRun: true, testDate: DateTime.UtcNow.AddDays(1));
@@ -160,7 +162,7 @@ public class BatchCleanupEngineTests
     public async Task RunAsync_Throws_WhenConnectionIsNull()
     {
         var engine = new BatchCleanupEngine<FakeCleanupRecord>(
-            "Test Cleanup", new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger());
+            "Test Cleanup", ServiceType, new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger());
 
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => engine.RunAsync(null!, batchSize: 1000, dryRun: false));
@@ -172,7 +174,7 @@ public class BatchCleanupEngineTests
     public async Task RunAsync_Throws_WhenBatchSizeIsNotPositive(int batchSize)
     {
         var engine = new BatchCleanupEngine<FakeCleanupRecord>(
-            "Test Cleanup", new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger());
+            "Test Cleanup", ServiceType, new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger());
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             () => engine.RunAsync(new FakeDbConnection(), batchSize, dryRun: false));
@@ -184,16 +186,16 @@ public class BatchCleanupEngineTests
     [InlineData(" ")]
     public void Constructor_Throws_WhenCleanupNameIsNullOrWhiteSpace(string? cleanupName) =>
         Assert.ThrowsAny<ArgumentException>(
-            () => new BatchCleanupEngine<FakeCleanupRecord>(cleanupName!, new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger()));
+            () => new BatchCleanupEngine<FakeCleanupRecord>(cleanupName!, ServiceType, new FakeBatchCleanupRepository<FakeCleanupRecord>([]), new FakeAuditLogger()));
 
     [Fact]
     public void Constructor_Throws_WhenRepositoryIsNull() =>
         Assert.Throws<ArgumentNullException>(
-            () => new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", null!, new FakeAuditLogger()));
+            () => new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, null!, new FakeAuditLogger()));
 
     [Fact]
     public void Constructor_Throws_WhenAuditLoggerIsNull() =>
         Assert.Throws<ArgumentNullException>(
-            () => new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", new FakeBatchCleanupRepository<FakeCleanupRecord>([]), null!));
+            () => new BatchCleanupEngine<FakeCleanupRecord>("Test Cleanup", ServiceType, new FakeBatchCleanupRepository<FakeCleanupRecord>([]), null!));
 }
 

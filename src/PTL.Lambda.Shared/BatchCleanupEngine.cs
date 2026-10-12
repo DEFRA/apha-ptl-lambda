@@ -23,12 +23,14 @@ public sealed class BatchCleanupEngine<TRecord> where TRecord : ICleanupRecord
     private const int SampleSize = 5;
 
     private readonly string _cleanupName;
+    private readonly LegacyServiceType _serviceType;
     private readonly IBatchCleanupRepository<TRecord> _repository;
     private readonly IAuditLogger _auditLogger;
     private readonly TimeSpan _timeBudget;
 
     public BatchCleanupEngine(
         string cleanupName,
+        LegacyServiceType serviceType,
         IBatchCleanupRepository<TRecord> repository,
         IAuditLogger auditLogger,
         TimeSpan? timeBudget = null)
@@ -38,6 +40,7 @@ public sealed class BatchCleanupEngine<TRecord> where TRecord : ICleanupRecord
         ArgumentNullException.ThrowIfNull(auditLogger);
 
         _cleanupName = cleanupName;
+        _serviceType = serviceType;
         _repository = repository;
         _auditLogger = auditLogger;
         _timeBudget = timeBudget ?? BatchCleanupEngineDefaults.TimeBudget;
@@ -225,6 +228,6 @@ public sealed class BatchCleanupEngine<TRecord> where TRecord : ICleanupRecord
                 break;
         }
 
-        await _auditLogger.LogAsync(connection, _cleanupName, message, level, cancellationToken).ConfigureAwait(false);
+        await _auditLogger.LogAsync(connection, _serviceType, message, level, cancellationToken).ConfigureAwait(false);
     }
 }
