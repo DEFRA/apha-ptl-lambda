@@ -13,7 +13,7 @@ namespace PTL.Lambda.Shared;
 /// </summary>
 public sealed class SqlAuditLogger : IAuditLogger
 {
-    private readonly Func<IDbConnection, string, string, AuditLogLevel, DateTime, CancellationToken, Task> _insert;
+    private readonly Func<IDbConnection, LegacyServiceType, string, AuditLogLevel, DateTime, CancellationToken, Task> _insert;
 
     public SqlAuditLogger() : this(InsertAsync)
     {
@@ -21,39 +21,41 @@ public sealed class SqlAuditLogger : IAuditLogger
 
     // Lets tests replace the real Dapper/stored-procedure call with a fake, the same seam each
     // Lambda's FunctionHandler overload already uses for IDbConnectionFactory.
-    internal SqlAuditLogger(Func<IDbConnection, string, string, AuditLogLevel, DateTime, CancellationToken, Task> insert) =>
+    internal SqlAuditLogger(Func<IDbConnection, LegacyServiceType, string, AuditLogLevel, DateTime, CancellationToken, Task> insert) =>
         _insert = insert;
 
     public async Task LogAsync(
         IDbConnection connection,
-        string serviceName,
+        LegacyServiceType serviceType,
         string message,
         AuditLogLevel level,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
 
         try
         {
-            await _insert(connection, serviceName, message, level, DateTime.UtcNow, cancellationToken).ConfigureAwait(false);
+            await _insert(connection, serviceType, message, level, DateTime.UtcNow, cancellationToken).ConfigureAwait(false);
         }
         catch (DbException exception)
         {
             // Matches the legacy EventLogger: an audit-logging failure is swallowed (never blocks
             // the cleanup run itself) after being logged for operators to see.
-            Log.Error(exception, "Failed to write audit log entry for {Service}: {Message}", serviceName, message);
+            Log.Error(exception, "Failed to write audit log entry for {ServiceType}: {Message}", serviceType, message);
         }
     }
 
     [ExcludeFromCodeCoverage] // Real Dapper/stored-procedure call - needs a live SQL Server to exercise, same rationale as Program.cs.
     private static Task InsertAsync(
-        IDbConnection connection, string serviceName, string message, AuditLogLevel level, DateTime createdAtUtc,
+        IDbConnection connection, LegacyServiceType serviceType, string message, AuditLogLevel level, DateTime createdAtUtc,
         CancellationToken cancellationToken) =>
         connection.ExecuteAsync(new CommandDefinition(
             "spInsertDeletionLog",
-            new { Message = message, Type = level.ToString(), Service = serviceName, CreatedAt = createdAtUtc },
+            // tblDeletionLog.fldService/@Service is INT (the legacy ServiceTypeEnum's underlying
+            // value) - passing the free-text cleanup name here caused "Error converting data type
+            // nvarchar to int" (SQL Error 8114) in production; cast the enum, never the display name.
+            new { Message = message, Type = level.ToString(), Service = (int)serviceType, CreatedAt = createdAtUtc },
             commandType: CommandType.StoredProcedure,
             cancellationToken: cancellationToken));
 }

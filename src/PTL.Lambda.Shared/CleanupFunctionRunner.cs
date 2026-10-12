@@ -11,6 +11,7 @@ public static class CleanupFunctionRunner
 {
     public static async Task<CleanupResult> RunAsync<TRecord>(
         string cleanupName,
+        LegacyServiceType serviceType,
         string resultNoun,
         string actionVerb,
         IDbConnectionFactory connectionFactory,
@@ -27,7 +28,7 @@ public static class CleanupFunctionRunner
         using var connection = connectionFactory.CreateConnection();
         connection.Open();
 
-        var engine = new BatchCleanupEngine<TRecord>(cleanupName, repository, auditLogger);
+        var engine = new BatchCleanupEngine<TRecord>(cleanupName, serviceType, repository, auditLogger);
         var result = await engine.RunAsync(connection, request.BatchSize, request.DryRun, request.TestDate)
             .ConfigureAwait(false);
 
