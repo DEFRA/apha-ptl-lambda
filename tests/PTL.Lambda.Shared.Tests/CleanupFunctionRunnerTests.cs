@@ -5,6 +5,7 @@ namespace PTL.Lambda.Shared.Tests;
 public class CleanupFunctionRunnerTests
 {
     private static readonly DateTime ReferenceDate = new(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc);
+    private const LegacyServiceType ServiceType = LegacyServiceType.DeleteAttachmentsService;
 
     public CleanupFunctionRunnerTests()
     {
@@ -21,9 +22,10 @@ public class CleanupFunctionRunnerTests
         var batch = new List<FakeCleanupRecord> { new(Guid.NewGuid(), ReferenceDate.AddYears(-8), "Internal") };
         var connectionFactory = new FakeDbConnectionFactory();
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]);
+        var auditLogger = new FakeAuditLogger();
 
         var result = await CleanupFunctionRunner.RunAsync(
-            "TestCleanup", "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+            "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, auditLogger,
             new CleanupInvocationRequest());
 
         Assert.Equal("TestCleanup", result.Service);
@@ -31,6 +33,7 @@ public class CleanupFunctionRunnerTests
         Assert.Equal("deleted 1 widget(s) in 0.0s.", result.Message);
         Assert.Single(connectionFactory.LastConnection!.Transactions);
         Assert.True(connectionFactory.LastConnection.Transactions[0].Committed);
+        Assert.All(auditLogger.Entries, e => Assert.Equal(ServiceType, e.ServiceType));
     }
 
     [Fact]
@@ -41,7 +44,7 @@ public class CleanupFunctionRunnerTests
         var repository = new FakeBatchCleanupRepository<FakeCleanupRecord>([batch]);
 
         var result = await CleanupFunctionRunner.RunAsync(
-            "TestCleanup", "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+            "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
             new CleanupInvocationRequest(DryRun: true));
 
         Assert.Equal("[DRY RUN] identified 1 widget(s) in 0.0s.", result.Message);
@@ -56,7 +59,7 @@ public class CleanupFunctionRunnerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => CleanupFunctionRunner.RunAsync(
-                "TestCleanup", "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+                "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
                 new CleanupInvocationRequest()));
     }
 
@@ -69,7 +72,7 @@ public class CleanupFunctionRunnerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => CleanupFunctionRunner.RunAsync(
-                "TestCleanup", "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
+                "TestCleanup", ServiceType, "widget", "deleted", connectionFactory, repository, new FakeAuditLogger(),
                 new CleanupInvocationRequest()));
 
         Assert.True(connectionFactory.LastConnection!.Transactions[0].RolledBack);

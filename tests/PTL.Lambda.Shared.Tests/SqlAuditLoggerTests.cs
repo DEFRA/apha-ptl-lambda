@@ -7,28 +7,29 @@ namespace PTL.Lambda.Shared.Tests;
 public class SqlAuditLoggerTests
 {
     private static readonly FakeDbConnection Connection = new();
+    private const LegacyServiceType ServiceType = LegacyServiceType.DeleteAttachmentsService;
 
     [Fact]
     public async Task LogAsync_InvokesInsert_WithExpectedArguments()
     {
         IDbConnection? seenConnection = null;
-        string? seenService = null;
+        LegacyServiceType? seenServiceType = null;
         string? seenMessage = null;
         AuditLogLevel? seenLevel = null;
 
-        var logger = new SqlAuditLogger((connection, service, message, level, _, _) =>
+        var logger = new SqlAuditLogger((connection, serviceType, message, level, _, _) =>
         {
             seenConnection = connection;
-            seenService = service;
+            seenServiceType = serviceType;
             seenMessage = message;
             seenLevel = level;
             return Task.CompletedTask;
         });
 
-        await logger.LogAsync(Connection, "DeleteAttachments", "Starting cleanup", AuditLogLevel.Information);
+        await logger.LogAsync(Connection, ServiceType, "Starting cleanup", AuditLogLevel.Information);
 
         Assert.Same(Connection, seenConnection);
-        Assert.Equal("DeleteAttachments", seenService);
+        Assert.Equal(ServiceType, seenServiceType);
         Assert.Equal("Starting cleanup", seenMessage);
         Assert.Equal(AuditLogLevel.Information, seenLevel);
     }
@@ -38,7 +39,7 @@ public class SqlAuditLoggerTests
     {
         var logger = new SqlAuditLogger((_, _, _, _, _, _) => throw new TestDbException());
 
-        await logger.LogAsync(Connection, "DeleteAttachments", "Starting cleanup", AuditLogLevel.Error);
+        await logger.LogAsync(Connection, ServiceType, "Starting cleanup", AuditLogLevel.Error);
         // No exception propagates - matches the legacy EventLogger's SqlException fallback behaviour.
     }
 
@@ -46,16 +47,7 @@ public class SqlAuditLoggerTests
     public async Task LogAsync_Throws_WhenConnectionIsNull() =>
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => new SqlAuditLogger((_, _, _, _, _, _) => Task.CompletedTask)
-                .LogAsync(null!, "DeleteAttachments", "message", AuditLogLevel.Information));
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(" ")]
-    public async Task LogAsync_Throws_WhenServiceNameIsNullOrWhiteSpace(string? serviceName) =>
-        await Assert.ThrowsAnyAsync<ArgumentException>(
-            () => new SqlAuditLogger((_, _, _, _, _, _) => Task.CompletedTask)
-                .LogAsync(Connection, serviceName!, "message", AuditLogLevel.Information));
+                .LogAsync(null!, ServiceType, "message", AuditLogLevel.Information));
 
     [Theory]
     [InlineData(null)]
@@ -64,7 +56,7 @@ public class SqlAuditLoggerTests
     public async Task LogAsync_Throws_WhenMessageIsNullOrWhiteSpace(string? message) =>
         await Assert.ThrowsAnyAsync<ArgumentException>(
             () => new SqlAuditLogger((_, _, _, _, _, _) => Task.CompletedTask)
-                .LogAsync(Connection, "DeleteAttachments", message!, AuditLogLevel.Information));
+                .LogAsync(Connection, ServiceType, message!, AuditLogLevel.Information));
 
     [Fact]
     public void DefaultConstructor_DoesNotThrow() => _ = new SqlAuditLogger();
