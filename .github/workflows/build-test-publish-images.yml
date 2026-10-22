@@ -406,6 +406,13 @@ jobs:
           --logger "trx;LogFilePrefix=ptl-lambda-tests"
           --results-directory "${{ runner.temp }}/test-results"
 
+  security-scans:
+    name: Security scans
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security-scans.yml
+
   sonarcloud:
     name: SonarCloud analysis
     if: vars.SONAR_ENABLED == 'true'
@@ -541,7 +548,7 @@ jobs:
 
   publish:
     name: Publish ${{ matrix.component }} production image
-    needs: [changes, quality, sonarcloud, container-validation, release-version]
+    needs: [changes, quality, sonarcloud, security-scans, container-validation, release-version]
     if: >-
       always() &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
@@ -549,6 +556,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.quality.result == 'success' &&
       (vars.SONAR_ENABLED != 'true' || needs.sonarcloud.result == 'success') &&
+      needs.security-scans.result == 'success' &&
       needs.container-validation.result == 'success' &&
       needs.release-version.result == 'success' &&
       needs.changes.outputs.components != '[]'
@@ -863,7 +871,7 @@ jobs:
 
   gate:
     name: CI and publication gate
-    needs: [changes, quality, sonarcloud, container-validation, release-version, publish, finalise-release]
+    needs: [changes, release-label-validation, quality, sonarcloud, security-scans, container-validation, release-version, publish, finalise-release]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -872,6 +880,7 @@ jobs:
       CHANGES_RESULT: ${{ needs.changes.result }}
       QUALITY_RESULT: ${{ needs.quality.result }}
       SONAR_RESULT: ${{ needs.sonarcloud.result }}
+      SECURITY_SCANS_RESULT: ${{ needs.security-scans.result }}
       CONTAINER_RESULT: ${{ needs.container-validation.result }}
       RELEASE_VERSION_RESULT: ${{ needs.release-version.result }}
       PUBLISH_RESULT: ${{ needs.publish.result }}
@@ -899,6 +908,11 @@ jobs:
             echo "::error::SonarCloud is enabled but result is ${SONAR_RESULT}."
             exit 1
           fi
+
+          [[ "${SECURITY_SCANS_RESULT}" == "success" ]] || {
+            echo "::error::Security scans (secrets, dependencies, CodeQL) result: ${SECURITY_SCANS_RESULT}"
+            exit 1
+          }
 
           if [[ "${COMPONENTS}" != "[]" && "${CONTAINER_RESULT}" != "success" ]]; then
             echo "::error::Container validation result: ${CONTAINER_RESULT}"
