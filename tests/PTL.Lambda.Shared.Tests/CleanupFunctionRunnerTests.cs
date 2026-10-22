@@ -30,7 +30,7 @@ public class CleanupFunctionRunnerTests
 
         Assert.Equal("TestCleanup", result.Service);
         Assert.Equal("Completed", result.Status);
-        Assert.Equal("deleted 1 widget(s) in 0.0s.", result.Message);
+        Assert.Matches(@"^deleted 1 widget\(s\) in \d+\.\ds\.$", result.Message);
         Assert.Single(connectionFactory.LastConnection!.Transactions);
         Assert.True(connectionFactory.LastConnection.Transactions[0].Committed);
         Assert.All(auditLogger.Entries, e => Assert.Equal(ServiceType, e.ServiceType));
@@ -47,7 +47,7 @@ public class CleanupFunctionRunnerTests
             new CleanupDescriptor("TestCleanup", ServiceType, "widget", "deleted"), connectionFactory, repository, new FakeAuditLogger(),
             new CleanupInvocationRequest(DryRun: true));
 
-        Assert.Equal("[DRY RUN] identified 1 widget(s) in 0.0s.", result.Message);
+        Assert.Matches(@"^\[DRY RUN\] identified 1 widget\(s\) in \d+\.\ds\.$", result.Message);
         Assert.Empty(connectionFactory.LastConnection!.Transactions);
     }
 
