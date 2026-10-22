@@ -1,0 +1,6 @@
+name: PTL Lambda CodeQL configuration
+
+# Tests are not shipped. The blocking-findings.jq gate applies the same exclusion to
+# compiled (C#) results, where paths-ignore does not apply.
+paths-ignore:
+  - "tests/**"
