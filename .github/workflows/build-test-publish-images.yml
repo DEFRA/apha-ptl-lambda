@@ -384,7 +384,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -428,12 +428,12 @@ jobs:
           persist-credentials: false
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Set up Java
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.2.0
         with:
           distribution: temurin
           java-version: "17"
@@ -519,15 +519,26 @@ jobs:
       # --mount=type=cache in the Dockerfiles works natively here - unlike the
       # windows-2022 runners used by the ECS apha-ptl-apps repo, no workaround
       # action is needed to strip cache mounts before building.
+      # --pull forces fresh base images: the floating dotnet/sdk:10.0 tag and any image cached on
+      # the runner would otherwise bundle an older, vulnerable runtime into the self-contained Lambda.
       - name: Build container without publishing
         shell: bash
         run: |
           docker build \
+            --pull \
             --file "${{ env.DOCKERFILE }}" \
             --tag "ptl-lambda-${{ matrix.component }}:${GITHUB_SHA}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             .
+
+      # The Lambdas are published self-contained, so the .NET runtime is bundled at build time and
+      # is not updated by the base image; the scan reports it like any other dependency.
+      - name: Scan image for vulnerabilities
+        uses: ./.github/actions/trivy-image-scan
+        with:
+          image: ptl-lambda-${{ matrix.component }}:${{ github.sha }}
+          name: ${{ matrix.component }}
 
       # On push to main this is the exact image publish later pushes - saving it here
       # means publish loads it instead of rebuilding, so what's pushed is guaranteed

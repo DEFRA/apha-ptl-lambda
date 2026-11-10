@@ -24,7 +24,12 @@ WORKDIR /var/task
 
 # Microsoft.Data.SqlClient requires ICU and throws NotSupportedException under
 # InvariantGlobalization - al2023's minimal image has no ICU package by default.
-RUN dnf install -y libicu && dnf clean all
+# The base image lags behind the Amazon Linux security repository, and al2023 pins dnf to the
+# release the image was built from, so --releasever=latest is needed to pick up fixed packages.
+# The image's dnf is microdnf, which has no --security option, so everything is upgraded.
+RUN dnf upgrade -y --releasever=latest \
+    && dnf install -y --releasever=latest libicu \
+    && dnf clean all
 
 COPY --from=build /app/publish .
 
