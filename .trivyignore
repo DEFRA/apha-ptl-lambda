@@ -1,2 +1,7 @@
 # Accepted image vulnerabilities, one ID per line (CVE-... or GHSA-...), read by .github/actions/trivy-image-scan.
 # Always give a reason and an expiry so the risk is reviewed: CVE-2026-00000 exp:2026-12-31
+
+# Go stdlib in /usr/local/bin/aws-lambda-rie, the Runtime Interface Emulator that AWS ships in the
+# provided:al2023 base image for local testing (see README). The Lambda service never runs it, and the
+# fix needs AWS to publish a rebuilt base image. Re-check when the expiry passes.
+CVE-2026-111943 exp:2026-12-10
